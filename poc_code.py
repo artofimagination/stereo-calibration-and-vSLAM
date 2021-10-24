@@ -395,7 +395,7 @@ class StereoCameraSensor():
 
             # Needed to draw the window
             cv2.waitKey(1)
-
+        print("OOP",objectPoints)
         cv2.destroyWindow(imageDirectory)
 
         print("Found corners in {0} out of {1} images"
@@ -477,7 +477,7 @@ class StereoCameraSensor():
         #     print("Object points do not match")
         #     sys.exit(1)
         objectPoints = leftObjectPoints
-
+        
         print("Calibrating left camera...")
         _, leftCameraMatrix, leftDistortionCoefficients, _, _ = cv2.calibrateCamera(
                 objectPoints, leftImagePoints, imageSize, None, None)
@@ -1418,17 +1418,17 @@ if __name__ == "__main__":
     # app.aboutToQuit.connect(window.sigint_handler)
 
     # sys.exit(app.exec_())
-    #worker = Backend()
-    #while True:
-    # worker.cameras.createCalibImages()
-    # (filenames, imageSize, leftFilenames, leftObjectPoints, leftImagePoints, rightFilenames, rightObjectPoints, rightImagePoints) = worker.cameras.getCameraParams()
-    # worker.cameras.calibrateSensor(filenames, imageSize, leftFilenames, leftObjectPoints, leftImagePoints, rightFilenames, rightObjectPoints, rightImagePoints)
+    worker = Backend()
+    while True:
+        worker.cameras.createCalibImages()
+        (filenames, imageSize, leftFilenames, leftObjectPoints, leftImagePoints, rightFilenames, rightObjectPoints, rightImagePoints) = worker.cameras.getCameraParams()
+        worker.cameras.calibrateSensor(filenames, imageSize, leftFilenames, leftObjectPoints, leftImagePoints, rightFilenames, rightObjectPoints, rightImagePoints)
     # time.sleep(3)
     #worker.cameras.createDepthMap2()
     # del worker
     # time.sleep(3)
-    app = QApplication([])
-    window = MainWindow()
-    app.aboutToQuit.connect(window.sigint_handler)
+    # app = QApplication([])
+    # window = MainWindow()
+    # app.aboutToQuit.connect(window.sigint_handler)
 
-    sys.exit(app.exec_())
+    # sys.exit(app.exec_())

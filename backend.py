@@ -1,7 +1,9 @@
 import traceback
 import sys
+from enum import Enum
 
 from sensor import Sensor
+from calibration import SensorCalibrator
 
 from PyQt5.QtCore import QObject, Qt
 from PyQt5 import QtCore
@@ -13,16 +15,51 @@ import cv2
 class BackendSignals(QtCore.QObject):
     finished = QtCore.pyqtSignal()
     error = QtCore.pyqtSignal(tuple)
-    result = QtCore.pyqtSignal(object, object, object)
+    framesSent = QtCore.pyqtSignal(object, object, object)
 
 
+class States(Enum):
+    # SaveAndProcessImage (creating calibration image and camera info)
+    SaveAndProcessImage = 1
+    # Idle (spitting images on the UI)
+    Idle = 2
+    # Calibrate (generates the final calibration data)
+    Calibrate = 3
+    # BlockMatching (generates depth map using block matching)
+    BlockMatching = 4
+
+
+# Controls all business logic in a seperate thread from the UI.
+# Logic elements
+# Generating calibration images and data
+# Producing final calibration data
+# Depth map generation using block matching
 class Backend(QObject):
     def __init__(self):
         super(Backend, self).__init__()
 
         self.signals = BackendSignals()
+        # Thread break guard condition, when true the thread finishes.
         self.stop = False
+        # Sensor contains the camera handling, image retrieval
+        # and image processing functions
         self.sensor = Sensor()
+        # Responsible for creating calibration images and calibration matrices
+        self.calibrator = SensorCalibrator()
+        self.calibrator.framesUpdated.connect(self.updateVideoPixmap)
+
+        # Current left camera frame
+        self.leftFrame = None
+        # Current right camera frame
+        self.rightFrame = None
+        self.state = States.Idle
+
+        # Current left camera frame converted to QPixmap for UI displaying.
+        self.leftPix = QPixmap()
+        # Current right camera frame converted to QPixmap for UI displaying.
+        self.rightPix = QPixmap()
+        # Current depth map frame converted to QPixmap for UI displaying.
+        self.depthPix = QPixmap()
 
     def updateTextureThreshold(
           self,
@@ -54,10 +91,10 @@ class Backend(QObject):
           min_disp):
         self.sensor.min_disp = min_disp
 
-    def updateMax_disp(
+    def updateNum_disp(
           self,
-          max_disp):
-        self.sensor.max_disp = max_disp
+          num_disp):
+        self.sensor.num_disp = num_disp
 
     def updateBlockSize(
           self,
@@ -84,63 +121,117 @@ class Backend(QObject):
           disp12MaxDiff):
         self.sensor.disp12MaxDiff = disp12MaxDiff
 
-    def sendVideoToUI(self, leftFrame, rightFrame, depthMap):
-        pix_disp = QPixmap()
-        pix0 = QPixmap()
-        pix1 = QPixmap()
+    def updateCalib_image_index(self, calib_image_index):
+        self.calibrator.calib_image_index = calib_image_index
+
+    def updateRms_limit(self, rms_limit):
+        self.calibrator.rms_limit = rms_limit
+
+    def saveImage(self):
+        self.state = States.SaveAndProcessImage
+
+    def calibrateSensor(self):
+        self.state = States.Calibrate
+
+    def setIgnoreExistingImageData(self, value):
+        self.calibrator.ignoreExistingImageData = value
+
+    def enableAdvancedCalib(self, value):
+        self.calibrator.advancedCalib = value
+
+    # Converts the incoming frames to QPixmap in order to visualize in Qt UI.
+    def updateVideoPixmap(self, leftFrame, rightFrame, depthMap):
         if depthMap is not None:
             img = QImage(
                 depthMap,
                 depthMap.shape[1],
                 depthMap.shape[0],
                 QImage.Format_RGB888)
-            pix_disp = QPixmap.fromImage(img)
-            pix_disp = pix_disp.scaled(
-                800,
-                400,
+            self.depthPix = QPixmap.fromImage(img)
+            self.depthPix = self.depthPix.scaled(
+                600,
+                350,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation)
 
         if leftFrame is not None:
+            leftFrame = cv2.cvtColor(
+                leftFrame, cv2.COLOR_BGR2RGB)
             img = QImage(
                 leftFrame,
                 leftFrame.shape[1],
                 leftFrame.shape[0],
                 QImage.Format_RGB888)
-            pix0 = QPixmap.fromImage(img)
-            pix0 = pix0.scaled(
-                800,
+            self.leftPix = QPixmap.fromImage(img)
+            self.leftPix = self.leftPix.scaled(
                 600,
+                350,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation)
 
         if rightFrame is not None:
+            rightFrame = cv2.cvtColor(
+                rightFrame, cv2.COLOR_BGR2RGB)
             img = QImage(
                 rightFrame,
                 rightFrame.shape[1],
                 rightFrame.shape[0],
                 QImage.Format_RGB888)
-            pix1 = QPixmap.fromImage(img)
-            pix1 = pix1.scaled(
-                800,
+            self.rightPix = QPixmap.fromImage(img)
+            self.rightPix = self.rightPix.scaled(
                 600,
+                350,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation)
-        self.signals.result.emit(pix0, pix1, pix_disp)
+        self.signals.framesSent.emit(
+                  self.leftPix, self.rightPix, self.depthPix)
 
+    # Main entry point.
+    # Handles different backend states
+    #   Idle (spitting images on the UI)
+    #   SaveAndProcessImage (creating calibration image and camera info)
+    #   Calibrate (generates the final calibration data)
+    #   BlockMatching (generates depth map using block matching)
     @QtCore.pyqtSlot()
     def run(self):
-        # Retrieve args/kwargs here; and fire processing using them
+        self.sensor.startSensors()
+        calibrationFileLoaded = False
         try:
-            self.sensor.startSensors()
-            calibration = self.sensor.loadCalibFile()
             while(True):
                 if self.stop:
                     break
 
-                (leftFrame, rightFrame, depthMap) =\
-                    self.sensor.createDepthMap(calibration)
-                self.sendVideoToUI(leftFrame, rightFrame, depthMap)
+                if self.state == States.Idle:
+                    (self.leftFrame, self.rightFrame) =\
+                        self.sensor.captureFrame()
+                    self.updateVideoPixmap(
+                        self.leftFrame, self.rightFrame, None)
+
+                if self.state == States.SaveAndProcessImage:
+                    self.calibrator.saveAndProcessImage(
+                        self.leftFrame, self.rightFrame)
+                    if self.calibrator.advancedCalib:
+                        rms, _ = self.calibrator.calibrateSensor()
+                        self.calibrator.checkRMS(rms)
+                    self.state = States.Idle
+
+                if self.state == States.Calibrate:
+                    _, params = self.calibrator.calibrateSensor()
+                    self.calibrator.finalizingCalibration(*params)
+                    self.state = States.Idle
+
+                if self.state == States.BlockMatching:
+                    if calibrationFileLoaded is False:
+                        calibration = self.sensor.loadCalibFile()
+                        calibrationFileLoaded = True
+                    (leftFrame, rightFrame, depthMap) =\
+                        self.sensor.createDepthMap(calibration)
+                    self.updateVideoPixmap(leftFrame, rightFrame, depthMap)
+                else:
+                    calibrationFileLoaded = False
+
+                self.signals.framesSent.emit(
+                    self.leftPix, self.rightPix, self.depthPix)
         except Exception:
             self.sensor.left.release()
             self.sensor.right.release()

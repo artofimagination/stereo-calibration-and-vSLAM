@@ -5,6 +5,9 @@ import os
 import cv2
 import numpy as np
 
+from PyQt5 import QtCore
+from PyQt5.QtCore import QObject
+
 # Stereo calibration result file
 CALIBRATION_RESULT = "output/calibration.npz"
 
@@ -13,12 +16,16 @@ CAMERA_WIDTH = 1280
 CAMERA_HEIGHT = 720
 
 
-class SensorCalibrator():
+# Generates calibration images and data
+# Calibrates the cameras and stores the result for future use.
+class SensorCalibrator(QObject):
+    framesUpdated = QtCore.pyqtSignal(object, object, object)
+
     # Location where the chessboard images to be stored
     LEFT_IMAGE_DIR = "calibImages/left"
     RIGHT_IMAGE_DIR = "calibImages/right"
-    LEFT_PATH = "{LEFT_IMAGE_DIR}/{:06d}.jpg"
-    RIGHT_PATH = "{RIGHT_IMAGE_DIR}/{:06d}.jpg"
+    LEFT_PATH = "{}/{:06d}.jpg"
+    RIGHT_PATH = "{}/{:06d}.jpg"
     CALIB_PARAMS = "output/calibParams.npz"
     # Chessboard pattern size
     CHESSBOARD_SIZE = (9, 6)
@@ -26,6 +33,9 @@ class SensorCalibrator():
     OBJECT_POINT_ZERO = np.zeros(
         (CHESSBOARD_SIZE[0] * CHESSBOARD_SIZE[1], 3),
         np.float32)
+    OBJECT_POINT_ZERO[:, :2] = np.mgrid[
+        0:CHESSBOARD_SIZE[0],
+        0:CHESSBOARD_SIZE[1]].T.reshape(-1, 2)
     # Termination criteria for sub pixel corner search and stereo calibrate.
     TERMINATION_CRITERIA = (
         cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_MAX_ITER,
@@ -34,87 +44,59 @@ class SensorCalibrator():
     OPTIMIZE_ALPHA = 0.25
 
     def __init__(self):
+        super(SensorCalibrator, self).__init__()
         # Last RMS value, that was within limits.
         self.last_accepted_rms = 100
         # Index of the last stored chess board calibration image.
-        self.calib_image_index = 23
+        self.calib_image_index = 0
         # Accepted RMS limit, all images that would
         # increase the RMS over the limit are thrown away.
-        self.rms_limit = 0.315
+        self.rms_limit = 0.135
         # Increment of RMS limit change
         self.increment = 0.01
         # When the RMS value goes above this value, the
         # increment will change to decrement strictening the RMS condition
-        self.turnaround_limit = self.rms_limit - 0.01
+        self.turnaround_limit = 0.315
         # Determines whether it is tolerance extension or reduction phase
         self.trend_up = True
 
-    def createCalibImages(self):
-        # TODO: Use more stable identifiers
-        left = cv2.VideoCapture(0)
-        right = cv2.VideoCapture(2)
+        if not os.path.isdir("calibImages"):
+            os.mkdir("calibImages")
 
-        # Increase the resolution
-        left.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-        left.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
-        right.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-        right.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+        if not os.path.isdir("output"):
+            os.mkdir("output")
 
-        # Use MJPEG to avoid overloading the USB 2.0 bus at this resolution
-        left.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-        right.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        self.advancedCalib = True
+        self.ignoreExistingImageData = True
 
-        # Grab both frames first, then retrieve
-        # to minimize latency between cameras.
-        while(True):
-            if self.calib_image_index > self.MAX_IMAGES:
-                print("Calibration image count limit reached")
-                break
+    # Saves current image pair and
+    # gets chessboard corner data of all saved images.
+    def saveAndProcessImage(self, leftFrame, rightFrame):
+        left_path = self.LEFT_PATH.format(
+            self.LEFT_IMAGE_DIR, self.calib_image_index)
+        right_path = self.RIGHT_PATH.format(
+            self.RIGHT_IMAGE_DIR, self.calib_image_index)
+        print(
+            f"Store image Left {left_path}")
+        print(
+            f"Store image Right {right_path}")
+        cv2.imwrite(left_path, leftFrame)
+        cv2.imwrite(right_path, rightFrame)
+        self.calib_image_index += 1
+        self.getCameraParams()
 
-            if not (left.grab() and right.grab()):
-                print("No more frames")
-                break
-
-            _, leftFrame = left.retrieve()
-            _, rightFrame = right.retrieve()
-
-            if leftFrame is not None and rightFrame is not None:
-                numpy_horizontal_concat = np.concatenate(
-                    (cv2.resize(leftFrame, (640, 480)),
-                     cv2.resize(rightFrame, (640, 480))),
-                    axis=1)
-                cv2.imshow('Stereo image', numpy_horizontal_concat)
-                ret = cv2.waitKey(1)
-                if ret & 0xFF == ord('n'):
-                    left_path = self.LEFT_PATH.format(self.calib_image_index)
-                    right_path = self.RIGHT_PATH.format(self.calib_image_index)
-                    print(
-                        f"Store image Left {left_path}")
-                    print(
-                        f"Store image Right {right_path}")
-                    cv2.imwrite(left_path, leftFrame)
-                    cv2.imwrite(right_path, rightFrame)
-                    self.calib_image_index += 1
-                    break
-                if ret & 0xFF == ord('q'):
-                    left.release()
-                    right.release()
-                    cv2.destroyAllWindows()
-                    sys.exit(0)
-
-        left.release()
-        right.release()
-        cv2.destroyAllWindows()
-
+    # Tries to find chessboard corners for each image for per camera sensor
     def _readImagesAndFindChessboards(self, imageDirectory):
         cacheFile = "{0}/chessboards.npz".format(imageDirectory)
-        try:
-            cache = np.load(cacheFile)
-            print(f"Loading image data from cache file at {cacheFile}")
-            return (list(cache["filenames"]), [], list(cache["objectPoints"]),
-                    list(cache["imagePoints"]), tuple(cache["imageSize"]))
-        except IOError:
-            print("Cache file at {0} not found".format(cacheFile))
+        if self.ignoreExistingImageData is False:
+            try:
+                cache = np.load(cacheFile)
+                print(f"Loading image data from cache file at {cacheFile}")
+                return (list(cache["filenames"]),
+                        [], list(cache["objectPoints"]),
+                        list(cache["imagePoints"]), tuple(cache["imageSize"]))
+            except IOError:
+                print("Cache file at {0} not found".format(cacheFile))
 
         print("Reading images at {0}".format(imageDirectory))
         imagePaths = glob.glob("{0}/*.jpg".format(imageDirectory))
@@ -157,12 +139,10 @@ is not the same size as the others"
                 self.CHESSBOARD_SIZE,
                 corners,
                 hasCorners)
-            cv2.imshow(imageDirectory, image)
-
-            # Needed to draw the window
-            cv2.waitKey(1)
-
-        cv2.destroyWindow(imageDirectory)
+            if imageDirectory == self.LEFT_IMAGE_DIR:
+                self.framesUpdated.emit(image, None, None)
+            else:
+                self.framesUpdated.emit(None, image, None)
 
         print("Found corners in {0} out of {1} images"
               .format(len(imagePoints), len(imagePaths)))
@@ -175,6 +155,7 @@ is not the same size as the others"
             imageSize=imageSize)
         return filenames, imagePaths, objectPoints, imagePoints, imageSize
 
+    # Gets chessboard corner data of all saved images for each camera.
     def getCameraParams(self):
         (leftFilenames,
          allImagesLeft,
@@ -200,6 +181,8 @@ is not the same size as the others"
         print(filenamesSorted)
 
         # throw away useless images.
+        print("Removing images that did not have identifiable \
+corners on any of the sensors...")
         for fileToDelete in allImagesLeft:
             keep = False
             for fileToKeep in filenamesSorted:
@@ -224,7 +207,7 @@ is not the same size as the others"
 
         np.savez_compressed(
             self.CALIB_PARAMS,
-            filenamesSorted=filenamesSorted,
+            filenames=filenamesSorted,
             imageSize=imageSize,
             leftFilenames=leftFilenames,
             leftObjectPoints=leftObjectPoints,
@@ -250,90 +233,59 @@ is not the same size as the others"
 
         return requestedObjectPoints, requestedImagePoints
 
-    def calibrateSensor(self):
-        try:
-            print(f"Loading calib params from file {self.CALIB_PARAMS}")
-            calib_params = np.load(self.CALIB_PARAMS)
-        except IOError:
-            print("Calib params file file at {0} not found"
-                  .format(self.CALIB_PARAMS))
-            sys.exit(1)
-
-        leftObjectPoints, leftImagePoints =\
-            self._getMatchingObjectAndImagePoints(
-              calib_params["filenames"],
-              calib_params["leftFilenames"],
-              calib_params["leftObjectPoints"],
-              calib_params["leftImagePoints"])
-        rightObjectPoints, rightImagePoints =\
-            self._getMatchingObjectAndImagePoints(
-                calib_params["filenames"],
-                calib_params["rightFilenames"],
-                calib_params["rightObjectPoints"],
-                calib_params["rightImagePoints"])
-
-        objectPoints = leftObjectPoints
-
-        print("Calibrating left camera...")
-        _, leftCameraMatrix, leftDistortionCoefficients, _, _ =\
-            cv2.calibrateCamera(
-                objectPoints,
-                calib_params["leftImagePoints"],
-                calib_params["imageSize"],
-                None,
-                None)
-        print("Calibrating right camera...")
-        _, rightCameraMatrix, rightDistortionCoefficients, _, _ =\
-            cv2.calibrateCamera(
-                objectPoints,
-                calib_params["rightImagePoints"],
-                calib_params["imageSize"],
-                None,
-                None)
-
-        print("Calibrating cameras together...")
-        (rms, _, _, _, _, rotationMatrix, translationVector, _, _) =\
-            cv2.stereoCalibrate(
-                calib_params["objectPoints"],
-                calib_params["leftImagePoints"],
-                calib_params["rightImagePoints"],
-                leftCameraMatrix,
-                leftDistortionCoefficients,
-                rightCameraMatrix,
-                rightDistortionCoefficients,
-                calib_params["imageSize"],
-                None,
-                None,
-                None,
-                None,
-                cv2.CALIB_FIX_INTRINSIC,
-                self.TERMINATION_CRITERIA)
-        print(f"Current RMS {rms}, last valid RMS {self.global_rms}")
-        print(f"MS increment {self.increment}, is trend up? {self.trendUp}")
-        print(f"Image index {self.calib_image_index}")
-        if rms > self.rms_limit:
-            print(f"RMS is too high (> {self.rms_limit}).\
+    # Check RMS value in advanced calibration image retrieving.
+    # This will only store images that result in an overall calibration RMS
+    # below the rms_limit.
+    # The limit is gradually increasing until the current rms value
+    # gets over the turnaround_limit. When this is reached,
+    # it starts to gradually reduce the rms_limit.
+    #
+    # This is not hard science.
+    # This algorithm is only based on my personal observation.
+    # Taking more calib images all form different angles, distance
+    # eventaully may generate lower RMS values, hence we can allow to
+    # stricten the limit.
+    #
+    # If you don't like this approach just disable the advanced mode in the UI.
+    def checkRMS(self, rms):
+        if self.advancedCalib:
+            print(f"\
+    Current RMS    {rms}\n\
+    Last valid RMS {self.last_accepted_rms}\n\
+    RMS increment  {self.increment}\n\
+    Is trend up?   {self.trend_up}\n\
+    Image index    {self.calib_image_index}")
+            if rms > self.rms_limit:
+                print(f"RMS is too high (> {self.rms_limit}). \
 Throwing away current chessboard image pair...")
-            self.calib_image_index -= 1
-            os.remove(
-                "{}/{:06d}.jpg"
-                .format(self.LEFT_IMAGE_DIR, self.calib_image_index))
-            os.remove(
-              "{}/{:06d}.jpg"
-              .format(self.RIGHT_IMAGE_DIR, self.calib_image_index))
-        else:
-            self.last_accepted_rms = rms
-            if self.rms_limit < self.turnaround_limit:
-                if self.trend_up and rms > self.turnaround_limit:
-                    print("Switching to downwards trend...")
-                    # Downwards trend is slower
-                    self.trend_up = False
-                    self.increment /= -2.0
+                self.calib_image_index -= 1
+                os.remove(
+                    "{}/{:06d}.jpg"
+                    .format(self.LEFT_IMAGE_DIR, self.calib_image_index))
+                os.remove(
+                  "{}/{:06d}.jpg"
+                  .format(self.RIGHT_IMAGE_DIR, self.calib_image_index))
+            else:
+                self.last_accepted_rms = rms
+                if self.rms_limit < self.turnaround_limit:
+                    if self.trend_up and rms > self.turnaround_limit:
+                        print("Switching to downwards trend...")
+                        # Downwards trend is slower
+                        self.trend_up = False
+                        self.increment /= -2.0
 
-                self.rms_limit += self.increment
+                    self.rms_limit += self.increment
 
+    def finalizingCalibration(
+          self,
+          leftCameraMatrix,
+          leftDistortionCoefficients,
+          rightCameraMatrix,
+          rightDistortionCoefficients,
+          imageSize,
+          rotationMatrix,
+          translationVector):
         print("Rectifying cameras...")
-
         # TODO: Why do I care about the disparityToDepthMap?
         (leftRectification,
          rightRectification,
@@ -344,7 +296,7 @@ Throwing away current chessboard image pair...")
          rightROI) = cv2.stereoRectify(
                         leftCameraMatrix, leftDistortionCoefficients,
                         rightCameraMatrix, rightDistortionCoefficients,
-                        calib_params["imageSize"],
+                        imageSize,
                         rotationMatrix, translationVector,
                         None, None, None, None, None,
                         cv2.CALIB_ZERO_DISPARITY,
@@ -356,22 +308,110 @@ Throwing away current chessboard image pair...")
                 leftDistortionCoefficients,
                 leftRectification,
                 leftProjection,
-                calib_params["imageSize"],
+                imageSize,
                 cv2.CV_32FC1)
         rightMapX, rightMapY = cv2.initUndistortRectifyMap(
                 rightCameraMatrix,
                 rightDistortionCoefficients,
                 rightRectification,
                 rightProjection,
-                calib_params["imageSize"],
+                imageSize,
                 cv2.CV_32FC1)
 
         np.savez_compressed(
             CALIBRATION_RESULT,
-            imageSize=calib_params["imageSize"],
+            imageSize=imageSize,
             leftMapX=leftMapX,
             leftMapY=leftMapY,
             leftROI=leftROI,
             rightMapX=rightMapX,
             rightMapY=rightMapY,
             rightROI=rightROI)
+
+    def calibrateSensor(self):
+        filenames = []
+        leftFilenames = []
+        leftObjectPoints = []
+        leftImagePoints = []
+        rightFileNames = []
+        rightObjectPoints = []
+        rightImagePoints = []
+        imageSize = None
+        try:
+            print(f"Loading calib params from file {self.CALIB_PARAMS}")
+            calib_params = np.load(self.CALIB_PARAMS)
+            filenames = list(calib_params["filenames"])
+            leftFilenames = list(calib_params["leftFilenames"])
+            leftObjectPoints = list(calib_params["leftObjectPoints"])
+            leftImagePoints = list(calib_params["leftImagePoints"])
+            rightFileNames = list(calib_params["rightFilenames"])
+            rightObjectPoints = list(calib_params["rightObjectPoints"])
+            rightImagePoints = list(calib_params["rightImagePoints"])
+            imageSize = tuple(calib_params["imageSize"])
+        except IOError:
+            print("Calib params file file at {0} not found"
+                  .format(self.CALIB_PARAMS))
+            sys.exit(1)
+
+        if len(calib_params["filenames"]) == 0:
+            print("No valid calib images were produced for calibration")
+            return
+
+        leftObjectPoints, leftImagePoints =\
+            self._getMatchingObjectAndImagePoints(
+              filenames,
+              leftFilenames,
+              leftObjectPoints,
+              leftImagePoints)
+        rightObjectPoints, rightImagePoints =\
+            self._getMatchingObjectAndImagePoints(
+                filenames,
+                rightFileNames,
+                rightObjectPoints,
+                rightImagePoints)
+
+        objectPoints = leftObjectPoints
+
+        print("Calibrating left camera...")
+        _, leftCameraMatrix, leftDistortionCoefficients, _, _ =\
+            cv2.calibrateCamera(
+                objectPoints,
+                leftImagePoints,
+                imageSize,
+                None,
+                None)
+        print("Calibrating right camera...")
+        _, rightCameraMatrix, rightDistortionCoefficients, _, _ =\
+            cv2.calibrateCamera(
+                objectPoints,
+                rightImagePoints,
+                imageSize,
+                None,
+                None)
+
+        print("Calibrating cameras together...")
+        (rms, _, _, _, _, rotationMatrix, translationVector, _, _) =\
+            cv2.stereoCalibrate(
+                objectPoints,
+                leftImagePoints,
+                rightImagePoints,
+                leftCameraMatrix,
+                leftDistortionCoefficients,
+                rightCameraMatrix,
+                rightDistortionCoefficients,
+                imageSize,
+                None,
+                None,
+                None,
+                None,
+                cv2.CALIB_FIX_INTRINSIC,
+                self.TERMINATION_CRITERIA)
+
+        return (rms, (
+          leftCameraMatrix,
+          leftDistortionCoefficients,
+          rightCameraMatrix,
+          rightDistortionCoefficients,
+          imageSize,
+          rotationMatrix,
+          translationVector))

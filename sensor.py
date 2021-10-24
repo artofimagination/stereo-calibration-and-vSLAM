@@ -26,9 +26,11 @@ class Sensor():
     DEPTH_VISUALIZATION_SCALE = 2048
 
     def __init__(self):
+        self.running = False
+
         # Stereo block matching parameters
         self.min_disp = 0
-        self.max_disp = 128
+        self.num_disp = 128
         self.blockSize = 5
         self.uniquenessRatio = 1
         self.speckleWindowSize = 2
@@ -43,32 +45,56 @@ class Sensor():
         self.right = None
 
     def startSensors(self):
-        indices = []
-        for i in range(10):
-            cap = cv2.VideoCapture(i)
-            if cap.isOpened():
-                print(f'Camera index available: {i}')
-                indices.append(i)
-            cap.release()
+        print("Starting sensors...")
+        if self.running is False:
+            indices = []
+            for i in range(10):
+                cap = cv2.VideoCapture(i)
+                if cap.isOpened():
+                    print(f'Camera index available: {i}')
+                    indices.append(i)
+                cap.release()
 
-        if len(indices) < 2:
-            print("Not all sensors are accessible")
-            sys.exit(1)
-        self.left = cv2.VideoCapture(indices[0])
-        self.right = cv2.VideoCapture(indices[1])
+            if len(indices) < 2:
+                print("Not all sensors are accessible")
+                sys.exit(1)
+            self.left = cv2.VideoCapture(indices[0])
+            self.right = cv2.VideoCapture(indices[1])
 
-        # Increase the resolution
-        self.left.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-        self.left.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
-        self.right.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-        self.right.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+            # Increase the resolution
+            self.left.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+            self.left.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+            self.right.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+            self.right.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
 
-        # Use MJPEG to avoid overloading the USB 2.0 bus at this resolution
-        self.left.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-        self.right.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            # Use MJPEG to avoid overloading the USB 2.0 bus at this resolution
+            self.left.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            self.right.set(
+                cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            self.running = True
+            print("Sensors running...")
+        else:
+            print("Sensors already running...")
+
+    def captureFrame(self):
+        # Grab both frames first,
+        # then retrieve to minimize latency between cameras
+        if not self.left.grab() or not self.right.grab():
+            print("No more frames")
+            return (None, None, None)
+
+        _, leftFrame = self.left.retrieve()
+        _, rightFrame = self.right.retrieve()
+        return (leftFrame, rightFrame)
 
     def loadCalibFile(self):
-        return np.load(CALIBRATION_RESULT, allow_pickle=False)
+        try:
+            calibration = np.load(CALIBRATION_RESULT, allow_pickle=False)
+        except IOError as e:
+            raise Exception(
+                  f"Calibration file is missing. \
+Please run calibration first: {e}")
+        return calibration
 
     def openCVShow(self):
         calibration = self.loadCalibFile()
@@ -109,7 +135,7 @@ class Sensor():
         stereoMatcher.setPreFilterCap(self.preFilterCap)
 
         stereoMatcher.setMinDisparity(self.min_disp)
-        stereoMatcher.setNumDisparities(self.max_disp)
+        stereoMatcher.setNumDisparities(self.num_disp)
         stereoMatcher.setBlockSize(self.blockSize)
 
         stereoMatcher.setSpeckleRange(self.speckleRange)
@@ -120,17 +146,9 @@ class Sensor():
         stereoMatcher.setUniquenessRatio(self.uniquenessRatio)
         stereoMatcher.setSmallerBlockSize(self.smallerBlockSize)
 
-        # Grab both frames first,
-        # then retrieve to minimize latency between cameras
-        if not self.left.grab() or not self.right.grab():
-            print("No more frames")
-            return (None, None, None)
-
-        _, leftFrame = self.left.retrieve()
+        (leftFrame, rightFrame) = self.captureFrame()
         leftHeight, leftWidth = leftFrame.shape[:2]
-        _, rightFrame = self.right.retrieve()
         rightHeight, rightWidth = rightFrame.shape[:2]
-
         if (leftWidth, leftHeight) != imageSize:
             print("Left camera has different size than the calibration data")
             return (leftFrame, rightFrame, None)
@@ -175,10 +193,10 @@ class Sensor():
         #     cv2.medianBlur(grayRight, 11)
 
         depth = stereoMatcher.compute(grayLeft, grayRight)
-        depth =\
-            cv2.medianBlur(depth, 5)
-        depth =\
-            cv2.GaussianBlur(depth, (9, 9), 0)
+        # depth =\
+        #     cv2.medianBlur(depth, 5)
+        # depth =\
+        #     cv2.GaussianBlur(depth, (9, 9), 0)
         depth = depth / self.DEPTH_VISUALIZATION_SCALE
 
         # Convert depth map to a format that can be accepted by the UI
@@ -191,9 +209,6 @@ class Sensor():
         normalized_depth_color = cv2.cvtColor(
             normalized_depth.astype(np.uint8),
             cv2.COLOR_GRAY2RGB)
-
-        leftFrame = cv2.cvtColor(leftFrame, cv2.COLOR_BGR2RGB)
-        rightFrame = cv2.cvtColor(rightFrame, cv2.COLOR_BGR2RGB)
 
         return leftFrame, rightFrame, normalized_depth_color
 
