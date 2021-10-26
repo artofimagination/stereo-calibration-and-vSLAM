@@ -16,6 +16,9 @@ class BackendSignals(QtCore.QObject):
     finished = QtCore.pyqtSignal()
     error = QtCore.pyqtSignal(tuple)
     framesSent = QtCore.pyqtSignal(object, object, object)
+    updateCalibInfo = QtCore.pyqtSignal(object, object)
+    rmsLimitUpdated = QtCore.pyqtSignal(float)
+    calibImageIndexUpdated = QtCore.pyqtSignal(int)
 
 
 class States(Enum):
@@ -47,6 +50,10 @@ class Backend(QObject):
         # Responsible for creating calibration images and calibration matrices
         self.calibrator = SensorCalibrator()
         self.calibrator.framesUpdated.connect(self.updateVideoPixmap)
+        self.calibrator.rmsMessages.connect(self.signals.updateCalibInfo)
+        self.calibrator.rmsLimitUpdated.connect(self.signals.rmsLimitUpdated)
+        self.calibrator.calibImageIndexUpdated.connect(
+            self.signals.calibImageIndexUpdated)
 
         # Current left camera frame
         self.leftFrame = None
@@ -122,10 +129,18 @@ class Backend(QObject):
         self.sensor.disp12MaxDiff = disp12MaxDiff
 
     def updateCalib_image_index(self, calib_image_index):
-        self.calibrator.calib_image_index = calib_image_index
+        if calib_image_index != self.calibrator.calib_image_index:
+            self.calibrator.calib_image_index = calib_image_index
 
     def updateRms_limit(self, rms_limit):
-        self.calibrator.rms_limit = rms_limit
+        if rms_limit != self.calibrator.rms_limit:
+            self.calibrator.rms_limit = rms_limit
+
+    def updateMax_rms(self, max_rms):
+        self.calibrator.max_rms = max_rms
+
+    def updateIncrement(self, increment):
+        self.calibrator.increment = increment
 
     def saveImage(self):
         self.state = States.SaveAndProcessImage

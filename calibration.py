@@ -20,6 +20,9 @@ CAMERA_HEIGHT = 720
 # Calibrates the cameras and stores the result for future use.
 class SensorCalibrator(QObject):
     framesUpdated = QtCore.pyqtSignal(object, object, object)
+    rmsMessages = QtCore.pyqtSignal(object, object)
+    rmsLimitUpdated = QtCore.pyqtSignal(float)
+    calibImageIndexUpdated = QtCore.pyqtSignal(int)
 
     # Location where the chessboard images to be stored
     LEFT_IMAGE_DIR = "calibImages/left"
@@ -54,11 +57,8 @@ class SensorCalibrator(QObject):
         self.rms_limit = 0.135
         # Increment of RMS limit change
         self.increment = 0.01
-        # When the RMS value goes above this value, the
-        # increment will change to decrement strictening the RMS condition
-        self.turnaround_limit = 0.315
-        # Determines whether it is tolerance extension or reduction phase
-        self.trend_up = True
+        # Maximum rms the rms_limit can be increased to.
+        self.max_rms = 0.315
 
         if not os.path.isdir("calibImages"):
             os.mkdir("calibImages")
@@ -83,6 +83,7 @@ class SensorCalibrator(QObject):
         cv2.imwrite(left_path, leftFrame)
         cv2.imwrite(right_path, rightFrame)
         self.calib_image_index += 1
+        self.calibImageIndexUpdated.emit(self.calib_image_index)
         self.getCameraParams()
 
     # Tries to find chessboard corners for each image for per camera sensor
@@ -236,29 +237,23 @@ corners on any of the sensors...")
     # Check RMS value in advanced calibration image retrieving.
     # This will only store images that result in an overall calibration RMS
     # below the rms_limit.
-    # The limit is gradually increasing until the current rms value
-    # gets over the turnaround_limit. When this is reached,
-    # it starts to gradually reduce the rms_limit.
-    #
-    # This is not hard science.
-    # This algorithm is only based on my personal observation.
-    # Taking more calib images all form different angles, distance
-    # eventaully may generate lower RMS values, hence we can allow to
-    # stricten the limit.
-    #
-    # If you don't like this approach just disable the advanced mode in the UI.
+    # The limit is gradually increasing until max rms has been reached
+    # This allows to filter some of the bad images.
     def checkRMS(self, rms):
         if self.advancedCalib:
-            print(f"\
-    Current RMS    {rms}\n\
-    Last valid RMS {self.last_accepted_rms}\n\
-    RMS increment  {self.increment}\n\
-    Is trend up?   {self.trend_up}\n\
-    Image index    {self.calib_image_index}")
+            message = f"\
+    Advanced calibration:\n\
+    Current RMS       {rms}\n\
+    Last valid RMS    {self.last_accepted_rms}\n\
+    Max RMS           {self.max_rms}\n\
+    Current RMS limit {self.rms_limit}\n\
+    RMS increment     {self.increment}\n\
+    Image index       {self.calib_image_index}\n\n"
             if rms > self.rms_limit:
-                print(f"RMS is too high (> {self.rms_limit}). \
-Throwing away current chessboard image pair...")
+                message += f"   RMS is too high (> {self.rms_limit}). \
+Throwing away current chessboard image pair..."
                 self.calib_image_index -= 1
+                self.calibImageIndexUpdated.emit(self.calib_image_index)
                 os.remove(
                     "{}/{:06d}.jpg"
                     .format(self.LEFT_IMAGE_DIR, self.calib_image_index))
@@ -266,15 +261,15 @@ Throwing away current chessboard image pair...")
                   "{}/{:06d}.jpg"
                   .format(self.RIGHT_IMAGE_DIR, self.calib_image_index))
             else:
+                message += "    RMS is within limit, adding image..."
                 self.last_accepted_rms = rms
-                if self.rms_limit < self.turnaround_limit:
-                    if self.trend_up and rms > self.turnaround_limit:
-                        print("Switching to downwards trend...")
-                        # Downwards trend is slower
-                        self.trend_up = False
-                        self.increment /= -2.0
-
+                if self.rms_limit < self.max_rms:
                     self.rms_limit += self.increment
+                    self.rmsLimitUpdated.emit(self.rms_limit)
+            print(message)
+            self.rmsMessages.emit(rms, message)
+        else:
+            self.rmsMessages.emit(rms, "Simple calibration mode enabled")
 
     def finalizingCalibration(
           self,

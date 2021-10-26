@@ -1,3 +1,11 @@
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# This is the original Proof of Concept code that I copy pasted
+# from various sources
+# For more info on sources read README.md
+# This code may not function entirely and is only kept for reference
+# and is being properly reimplemented in the other files.
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 from gui import MainWindow
 
 import cv2

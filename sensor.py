@@ -195,8 +195,8 @@ Please run calibration first: {e}")
         depth = stereoMatcher.compute(grayLeft, grayRight)
         # depth =\
         #     cv2.medianBlur(depth, 5)
-        # depth =\
-        #     cv2.GaussianBlur(depth, (9, 9), 0)
+        depth =\
+            cv2.GaussianBlur(depth, (9, 9), 0)
         depth = depth / self.DEPTH_VISUALIZATION_SCALE
 
         # Convert depth map to a format that can be accepted by the UI

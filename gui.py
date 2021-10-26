@@ -1,7 +1,8 @@
 import os
-import datetime
 import numpy as np
 import glob
+import shutil
+from pathlib import Path
 
 from backend import Backend, States
 
@@ -28,8 +29,11 @@ class MainWindow(QMainWindow):
 
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
-        self.worker = None
-        self.workerThread = None
+        self.workerThread = QThread(self)
+        self.worker = Backend()
+        self.worker.signals.framesSent.connect(self.updateVideo)
+        self.worker.signals.finished.connect(self.thread_complete)
+        self.worker.signals.error.connect(self.sigint_handler)
         self.mode = "none"
         mainLayout = QGridLayout()
 
@@ -47,6 +51,7 @@ class MainWindow(QMainWindow):
         tabwidget.addTab(
             bmConfiguratorLayoutWidget, "Block Matching Configurator")
 
+        self._initUIElements()
         mainLayout.addWidget(tabwidget, 0, 0)
         mainWidget = QWidget()
         mainWidget.setLayout(mainLayout)
@@ -77,7 +82,38 @@ class MainWindow(QMainWindow):
             cal_advanced=self.advanced.isChecked(),
             cal_ignoreExitingImageData=self
                                        .ignoreExistingImageData
-                                       .isChecked())
+                                       .isChecked(),
+            cal_rms_increment=self.increment.value(),
+            cal_max_rms=self.max_rms.value())
+
+        settingsPath = Path(settingsName).with_suffix('')
+        settingsPath = settingsPath.stem
+
+        files = glob.glob(f"calibImages/left/{str(settingsPath)}/*")
+        for f in files:
+            os.remove(f)
+
+        files = glob.glob(f"calibImages/right/{str(settingsPath)}/*")
+        for f in files:
+            os.remove(f)
+
+        leftDirectory = f"calibImages/left/{str(settingsPath)}"
+        if not os.path.isdir(leftDirectory):
+            os.mkdir(leftDirectory)
+
+        files = glob.glob("calibImages/left/*")
+        for f in files:
+            if not os.path.isdir(f):
+                shutil.copy(f, leftDirectory)
+
+        rightDirectory = f"calibImages/right/{str(settingsPath)}"
+        if not os.path.isdir(rightDirectory):
+            os.mkdir(rightDirectory)
+
+        files = glob.glob("calibImages/right/*")
+        for f in files:
+            if not os.path.isdir(f):
+                shutil.copy(f, rightDirectory)
 
     def saveSettings(self):
         options = QFileDialog.Options()
@@ -90,7 +126,18 @@ class MainWindow(QMainWindow):
             self._saveValues(fileName)
             self._saveValues(f"{self.SETTINGS_DIR}/lastSaved.npz")
 
-    def _setLoadedValues(self, settings):
+    def _setLoadedValues(self, settingsName):
+        files = glob.glob("calibImages/left/*")
+        for f in files:
+            if not os.path.isdir(f):
+                os.remove(f)
+
+        files = glob.glob("calibImages/right/*")
+        for f in files:
+            if not os.path.isdir(f):
+                os.remove(f)
+
+        settings = np.load(settingsName)
         self.textureThreshold.setValue(settings["bm_textureThreshold"])
         self.min_disp.setValue(settings["bm_min_disp"])
         self.num_disp.setValue(settings["bm_num_disp"])
@@ -110,6 +157,29 @@ class MainWindow(QMainWindow):
         self.advanced.setChecked(bool(settings["cal_advanced"]))
         self.ignoreExistingImageData.setChecked(
             bool(settings["cal_ignoreExitingImageData"]))
+        self.increment.setValue(settings["cal_rms_increment"])
+        self.max_rms.setValue(settings["cal_max_rms"])
+
+        settingsPath = Path(settingsName).with_suffix('')
+        settingsPath = settingsPath.stem
+        directory = f"calibImages/left/{str(settingsPath)}"
+        if os.path.isdir(str(directory)):
+            files = glob.glob(f"{directory}/*")
+            for f in files:
+                shutil.copy(f, "calibImages/left/")
+        else:
+            print(
+                f"No left calib images to load \
+(calibImages/left/{str(settingsPath)})")
+
+        directory = f"calibImages/right/{str(settingsPath)}"
+        if os.path.isdir(str(directory)):
+            files = glob.glob(f"{directory}/*")
+            for f in files:
+                shutil.copy(f, "calibImages/right/")
+        else:
+            print(f"No left calib images to load \
+(calibImages/left/{str(settingsPath)})")
 
     def loadSettings(self):
         options = QFileDialog.Options()
@@ -120,8 +190,7 @@ class MainWindow(QMainWindow):
             options=options)
         if fileName:
             try:
-                settings = np.load(fileName)
-                self._setLoadedValues(settings)
+                self._setLoadedValues(fileName)
             except IOError:
                 print("Settings file at {0} not found"
                       .format(fileName))
@@ -153,9 +222,11 @@ class MainWindow(QMainWindow):
     def _createCalibrationUI(self):
         layout = QGridLayout()
         helpLabel = QLabel("Quick user guide:\n\
-    1. To start calibration, press start.\n\
-    2. Once started, to capture a pair of frames, press 'n' \
-when your sensor's are in the desired position.\n\n\
+    1. To start calibration interface, press start.\n\
+    2. Once started, to capture a pair of frames, press 'n' or 'Take image'\
+when your sensor's are in the desired position.\n\
+    3. When enough calib images are create press process, to create the final\
+calibration file.\n\n\
 Use modes:\n\
     a, Simple (Default): capture as many calibration images as you want, \
 when done press 'Process'.\n\
@@ -193,13 +264,30 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
 
         self.calib_image_index = QSpinBox()
         self.rms_limit = QDoubleSpinBox()
+        self.increment = QDoubleSpinBox()
+        self.max_rms = QDoubleSpinBox()
         configLayout = QHBoxLayout()
         configLayout.addWidget(QLabel("calib_image_index"))
         configLayout.addWidget(self.calib_image_index)
         configLayout.addWidget(QLabel("rms_limit"))
         configLayout.addWidget(self.rms_limit)
+        configLayout.addWidget(QLabel("increment"))
+        configLayout.addWidget(self.increment)
+        configLayout.addWidget(QLabel("max_rms"))
+        configLayout.addWidget(self.max_rms)
         configLayoutWidget = QWidget()
         configLayoutWidget.setLayout(configLayout)
+        self.calib_image_index.setRange(0, 1000)
+        self.calib_image_index.setSingleStep(1)
+        self.rms_limit.setRange(0, 10.0)
+        self.rms_limit.setDecimals(5)
+        self.rms_limit.setSingleStep(0.005)
+        self.increment.setRange(0, 1.0)
+        self.increment.setDecimals(5)
+        self.increment.setSingleStep(0.005)
+        self.max_rms.setRange(0, 10.0)
+        self.max_rms.setDecimals(5)
+        self.max_rms.setSingleStep(0.005)
 
         self.video0Calib = QLabel()
         self.video1Calib = QLabel()
@@ -209,10 +297,13 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         start = QPushButton("Start")
         self.process = QPushButton("Process")
         self.process.hide()
+        self.takeImage = QPushButton("Take image")
+        self.takeImage.hide()
         start.clicked.connect(self._startCalibration)
         buttonLayout = QHBoxLayout()
         buttonLayout.addWidget(start)
         buttonLayout.addWidget(self.process)
+        buttonLayout.addWidget(self.takeImage)
         buttonLayoutWidget = QWidget()
         buttonLayoutWidget.setLayout(buttonLayout)
 
@@ -252,6 +343,27 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.smallerBlockSize = QSpinBox()
         self.start = QPushButton("Start")
         self.start.clicked.connect(self._startBMConfiguration)
+
+        # Init spin boxes
+        self.textureThreshold.setRange(0, 10000)
+        self.min_disp.setRange(-1, 1000)
+        self.min_disp.setSingleStep(1)
+        self.num_disp.setRange(16, 1000)
+        self.num_disp.setSingleStep(16)
+        self.blockSize.setRange(5, 255)
+        self.blockSize.setSingleStep(2)
+        self.smallerBlockSize.setRange(-1, 1000000)
+        self.smallerBlockSize.setSingleStep(1)
+        self.uniquenessRatio.setRange(0, 1000)
+        self.speckleWindowSize.setRange(-1, 1000)
+        self.speckleRange.setRange(-1, 1000)
+        self.disp12MaxDiff.setRange(-1, 1000)
+        self.preFilterType.setRange(0, 1)
+        self.preFilterType.setSingleStep(1)
+        self.preFilterSize.setRange(5, 255)
+        self.preFilterSize.setSingleStep(2)
+        self.preFilterCap.setRange(1, 63)
+        self.preFilterCap.setSingleStep(1)
 
         layout.addWidget(self.video0Bm, 0, 0, 1, 4)
         layout.addWidget(self.video1Bm, 0, 4, 1, 4)
@@ -298,6 +410,7 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
     def updateVideo(self, v0, v1, v_disp):
         if self.mode == "calib":
             self.process.show()
+            self.takeImage.show()
             self.ignoreExistingImageData.setDisabled(False)
             self.advanced.setDisabled(False)
             self.video0Calib.setPixmap(v0)
@@ -310,92 +423,12 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
     def thread_complete(self):
         print("Worker thread stopped...")
 
-    def _startCalibration(self):
-        if self.mode == "calib":
-            print("Calibration is already running...")
-            return
+    def updateCalibInfo(self, rms, message):
+        self.RMSValue.setText(f"{rms}")
+        self.calibInfo.setText(message)
 
-        # init backend
-        if self.mode == "none":
-            self.workerThread = QThread(self)
-            self.worker = Backend()
-            self.worker.signals.framesSent.connect(self.updateVideo)
-            self.worker.signals.finished.connect(self.thread_complete)
-            self.worker.signals.error.connect(self.sigint_handler)
-
-        self.calib_image_index.setRange(0, 1000)
-        self.calib_image_index.setSingleStep(1)
-        self.rms_limit.setRange(0, 10)
-        self.rms_limit.setSingleStep(0.005)
-
-        self.calibratorLayoutWidget.takeImageTriggered.connect(
-            self.worker.saveImage)
-        self.process.clicked.connect(self.worker.calibrateSensor)
-        self.ignoreExistingImageData.toggled.connect(
-            self.worker.setIgnoreExistingImageData)
-        self.advanced.toggled.connect(
-            self.worker.enableAdvancedCalib)
-        self.calib_image_index.valueChanged.connect(
-            self.worker.updateCalib_image_index)
-        self.rms_limit.valueChanged.connect(
-            self.worker.updateRms_limit)
-
-        try:
-            settings = np.load(f"{self.SETTINGS_DIR}/lastSaved.npz",)
-            self._setLoadedValues(settings)
-        except IOError:
-            print("Settings file at {0} not found"
-                  .format(f"{self.SETTINGS_DIR}/lastSaved.npz",))
-            self.sigint_handler()
-        self.worker.enableAdvancedCalib(self.advanced.isChecked())
-        self.worker.setIgnoreExistingImageData(
-            self.ignoreExistingImageData.isChecked())
-
-        # Execute
-        self.worker.state = States.Idle
-        if self.mode == "none":
-            self.worker.moveToThread(self.workerThread)
-            self.workerThread.finished.connect(self.worker.deleteLater)
-            self.workerThread.started.connect(self.worker.run)
-            self.workerThread.start()
-        self.mode = "calib"
-
-    def _startBMConfiguration(self):
-        if self.mode == "bm":
-            print("Block Mathcing is already running...")
-            return
-
-        if self.mode == "none":
-            self.workerThread = QThread(self)
-            self.worker = Backend()
-
-            # Connect worker signals
-            self.worker.signals.framesSent.connect(self.updateVideo)
-            self.worker.signals.finished.connect(self.thread_complete)
-            self.worker.signals.error.connect(self.sigint_handler)
-
-        # Init spin boxes
-        self.textureThreshold.setRange(0, 10000)
-        self.min_disp.setRange(-1, 1000)
-        self.min_disp.setSingleStep(1)
-        self.num_disp.setRange(16, 1000)
-        self.num_disp.setSingleStep(16)
-        self.blockSize.setRange(5, 255)
-        self.blockSize.setSingleStep(2)
-        self.smallerBlockSize.setRange(-1, 1000000)
-        self.smallerBlockSize.setSingleStep(1)
-        self.uniquenessRatio.setRange(0, 1000)
-        self.speckleWindowSize.setRange(-1, 1000)
-        self.speckleRange.setRange(-1, 1000)
-        self.disp12MaxDiff.setRange(-1, 1000)
-        self.preFilterType.setRange(0, 1)
-        self.preFilterType.setSingleStep(1)
-        self.preFilterSize.setRange(5, 255)
-        self.preFilterSize.setSingleStep(2)
-        self.preFilterCap.setRange(1, 63)
-        self.preFilterCap.setSingleStep(1)
-
-        # wire signals/slots
+    def _initUIElements(self):
+        # wire bm signals/slots
         self.textureThreshold.valueChanged.connect(
             self.worker.updateTextureThreshold)
         self.min_disp.valueChanged.connect(self.worker.updateMin_disp)
@@ -418,13 +451,60 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.preFilterCap.valueChanged.connect(
               self.worker.updatePrefilterCap)
 
+        # wire calib signals/slots
+        self.calibratorLayoutWidget.takeImageTriggered.connect(
+            self.worker.saveImage)
+        self.process.clicked.connect(self.worker.calibrateSensor)
+        self.takeImage.clicked.connect(self.worker.saveImage)
+        self.ignoreExistingImageData.toggled.connect(
+            self.worker.setIgnoreExistingImageData)
+        self.advanced.toggled.connect(
+            self.worker.enableAdvancedCalib)
+        self.calib_image_index.valueChanged.connect(
+            self.worker.updateCalib_image_index)
+        self.rms_limit.valueChanged.connect(
+            self.worker.updateRms_limit)
+        self.increment.valueChanged.connect(
+            self.worker.updateIncrement)
+        self.max_rms.valueChanged.connect(
+            self.worker.updateMax_rms)
+        self.worker.signals.updateCalibInfo.connect(self.updateCalibInfo)
+        self.worker.signals.rmsLimitUpdated.connect(self.rms_limit.setValue)
+        self.worker.signals.calibImageIndexUpdated.connect(
+            self.calib_image_index.setValue)
+
+        # load values
         try:
-            settings = np.load(f"{self.SETTINGS_DIR}/lastSaved.npz",)
-            self._setLoadedValues(settings)
+            self._setLoadedValues(f"{self.SETTINGS_DIR}/lastSaved.npz")
         except IOError:
             print("Settings file at {0} not found"
-                  .format(f"{self.SETTINGS_DIR}/lastSaved.npz",))
+                  .format(f"{self.SETTINGS_DIR}/lastSaved.npz"))
             self.sigint_handler()
+
+    def _startCalibration(self):
+        print("Starting calibration...")
+        if self.mode == "calib":
+            print("Calibration is already running...")
+            return
+
+        self.worker.enableAdvancedCalib(self.advanced.isChecked())
+        self.worker.setIgnoreExistingImageData(
+            self.ignoreExistingImageData.isChecked())
+
+        # Execute
+        self.worker.state = States.Idle
+        if self.mode == "none":
+            self.worker.moveToThread(self.workerThread)
+            self.workerThread.finished.connect(self.worker.deleteLater)
+            self.workerThread.started.connect(self.worker.run)
+            self.workerThread.start()
+        self.mode = "calib"
+
+    def _startBMConfiguration(self):
+        print("Starting block matching...")
+        if self.mode == "bm":
+            print("Block Mathcing is already running...")
+            return
 
         # Execute
         self.worker.state = States.BlockMatching
