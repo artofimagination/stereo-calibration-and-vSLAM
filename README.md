@@ -14,6 +14,14 @@ This repo is heavily under development.
 At the moment only stereo camera calibration, depth map block matching configuration is implemented.<br>
 Added a small UI that allows generating calibration images and configuring block matching parameters in a comfortable way.
 
+Any contribution is appreciated.
+
+## Install
+The app was tested on Ubuntu 20.04 with Python 3.8. Can't guarantie it works on windows.<br>
+To install dependencies run ```pip install -r requirements.txt```<br>
+To run the app run ```python main.py```<br>
+
+
 # Generic UI features
 * **Save settings** - saves all UI control values into a settings npz file. Also saves feature specific info and files to locations those name is identical to the settings name. Saving the settings will generate a lastSaved folder/folder as well. this is useful for **Default load on startup**
 * **Load settings** - loads saved UI control values and additional data/files
