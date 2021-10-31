@@ -2,10 +2,13 @@
 Repo to produce stereo depth map and do mapping a navigation
 
 # Content
-[Stereo Calibration tab](#stereo-calibration-tab)<br>
-[Block matching tab](#block-matching-tab)<br>
+* [Stereo Calibration tab](#stereo-calibration-tab)<br>
+* [Stereo Calibration tips](#stereo-calibration-tips)<br>
+* [Block matching tab](#block-matching-tab)<br>
+* [Block matching tips](#block-matching-tips)<br>
+* [Calibration and block matching links](#sources-for-camera-calibration-and-depth-map-generation)<br>
 
-
+# Intro
 This repo is heavily under development.
 
 At the moment only stereo camera calibration, depth map block matching configuration is implemented.<br>
@@ -105,7 +108,7 @@ Since I am not really knowledgable in the area I basically did a lots of trial a
 * If you get nonsense or extreme amount of speckle and very little depth map with roughly similar config, then most likely your lenses are not well aligned or your chesspattern is not the most accurate
 
 
-# Sources for camera calibration and depth map generation:<br>
+# Sources for camera calibration and depth map generation<br>
 https://answers.opencv.org/question/182049/pythonstereo-disparity-quality-problems/<br>
 https://becominghuman.ai/stereo-3d-reconstruction-with-opencv-using-an-iphone-camera-part-i-c013907d1ab5<br>
 https://github.com/OmarPadierna/3DReconstruction<br>
