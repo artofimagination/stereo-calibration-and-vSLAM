@@ -2,15 +2,14 @@ import sys
 
 import cv2
 import numpy as np
-from calibration import CALIBRATION_RESULT, CAMERA_WIDTH, CAMERA_HEIGHT
+from calibration import CALIBRATION_RESULT
 
 
+# Draws the specified lines on the input images.
 def drawLines(img1, img2, lines, pts1, pts2):
     ''' img1 - image on which we draw the epilines for the points in img2
         lines - corresponding epilines '''
     r, c, _ = img1.shape
-    # img1 = cv2.cvtColor(img1, cv2.COLOR_GRAY2BGR)
-    # img2 = cv2.cvtColor(img2, cv2.COLOR_GRAY2BGR)
     for r, pt1, pt2 in zip(lines, pts1, pts2):
         color = tuple(np.random.randint(0, 255, 3).tolist())
         x0, y0 = map(int, [0, -r[2] / r[1]])
@@ -21,6 +20,10 @@ def drawLines(img1, img2, lines, pts1, pts2):
     return img1, img2
 
 
+# This class implements the camera sensor handling and image outputing
+# It can output normal stream or the depth map after block matching
+# There is also an option to draw the epipolar lines
+# on the undistorted image stream
 class Sensor():
     REMAP_INTERPOLATION = cv2.INTER_LINEAR
     DEPTH_VISUALIZATION_SCALE = 2048
@@ -29,6 +32,7 @@ class Sensor():
         self.running = False
 
         # Stereo block matching parameters
+        self.bmType = 0
         self.min_disp = 0
         self.num_disp = 128
         self.blockSize = 5
@@ -41,9 +45,17 @@ class Sensor():
         self.preFilterType = 0
         self.smallerBlockSize = 0
         self.textureThreshold = 0
+        self.P1 = 0
+        self.P2 = 0
         self.left = None
         self.right = None
+        self.drawEpipolar = False
+        self.camera_width = 640
+        self.camera_height = 480
 
+    # Initializes and starts the sensors
+    # If there are more than 2 sensors
+    # make sure the camera indices belong to the correct sensor.
     def startSensors(self):
         print("Starting sensors...")
         if self.running is False:
@@ -62,20 +74,29 @@ class Sensor():
             self.right = cv2.VideoCapture(indices[1])
 
             # Increase the resolution
-            self.left.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-            self.left.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
-            self.right.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-            self.right.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+            self.left.set(cv2.CAP_PROP_FRAME_WIDTH, self.camera_width)
+            self.left.set(cv2.CAP_PROP_FRAME_HEIGHT, self.camera_height)
+            self.right.set(cv2.CAP_PROP_FRAME_WIDTH, self.camera_width)
+            self.right.set(cv2.CAP_PROP_FRAME_HEIGHT, self.camera_height)
 
             # Use MJPEG to avoid overloading the USB 2.0 bus at this resolution
             self.left.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
             self.right.set(
                 cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
             self.running = True
+            print(f"Resolution is {self.camera_width}x{self.camera_height}")
             print("Sensors running...")
         else:
             print("Sensors already running...")
 
+    # Restart sensors.
+    def restartSensors(self):
+        self.running = False
+        self.left.release()
+        self.right.release()
+        self.startSensors()
+
+    # Capture frame in an efficient way.
     def captureFrame(self):
         # Grab both frames first,
         # then retrieve to minimize latency between cameras
@@ -87,6 +108,7 @@ class Sensor():
         _, rightFrame = self.right.retrieve()
         return (leftFrame, rightFrame)
 
+    # Loads the calibration file generated in the calibration tab.
     def loadCalibFile(self):
         try:
             calibration = np.load(CALIBRATION_RESULT, allow_pickle=False)
@@ -96,6 +118,7 @@ class Sensor():
 Please run calibration first: {e}")
         return calibration
 
+    # Opens the frame stream with cv2 library calls (No Qt UI is used)
     def openCVShow(self):
         calibration = self.loadCalibFile()
         while True:
@@ -114,6 +137,7 @@ Please run calibration first: {e}")
         self.right.release()
         cv2.destroyAllWindows()
 
+    # Generates depth map using block matching, or semi global block matching.
     def createDepthMap(self, calibration):
         imageSize = tuple(calibration["imageSize"])
         leftMapX = calibration["leftMapX"]
@@ -126,14 +150,19 @@ Please run calibration first: {e}")
         # TODO: Why these values in particular?
         # TODO: Try applying brightness/contrast/gamma
         # adjustments to the images
-        stereoMatcher = cv2.StereoBM_create()
-        stereoMatcher.setROI1(leftROI)
-        stereoMatcher.setROI2(rightROI)
-
-        stereoMatcher.setPreFilterType(self.preFilterType)
-        stereoMatcher.setPreFilterSize(self.preFilterSize)
-        stereoMatcher.setPreFilterCap(self.preFilterCap)
-
+        if self.bmType == 0:
+            stereoMatcher = cv2.StereoBM_create()
+            stereoMatcher.setROI1(leftROI)
+            stereoMatcher.setROI2(rightROI)
+            stereoMatcher.setPreFilterType(self.preFilterType)
+            stereoMatcher.setPreFilterSize(self.preFilterSize)
+            stereoMatcher.setPreFilterCap(self.preFilterCap)
+            stereoMatcher.setSmallerBlockSize(self.smallerBlockSize)
+            stereoMatcher.setTextureThreshold(self.textureThreshold)
+        else:
+            stereoMatcher = cv2.StereoSGBM_create()
+            stereoMatcher.setP1(self.P1)
+            stereoMatcher.setP2(self.P2)
         stereoMatcher.setMinDisparity(self.min_disp)
         stereoMatcher.setNumDisparities(self.num_disp)
         stereoMatcher.setBlockSize(self.blockSize)
@@ -141,10 +170,7 @@ Please run calibration first: {e}")
         stereoMatcher.setSpeckleRange(self.speckleRange)
         stereoMatcher.setSpeckleWindowSize(self.speckleWindowSize)
         stereoMatcher.setDisp12MaxDiff(self.disp12MaxDiff)
-
-        stereoMatcher.setTextureThreshold(self.textureThreshold)
         stereoMatcher.setUniquenessRatio(self.uniquenessRatio)
-        stereoMatcher.setSmallerBlockSize(self.smallerBlockSize)
 
         (leftFrame, rightFrame) = self.captureFrame()
         leftHeight, leftWidth = leftFrame.shape[:2]
@@ -168,9 +194,14 @@ Please run calibration first: {e}")
             rightMapY,
             self.REMAP_INTERPOLATION)
 
+        if self.drawEpipolar is True:
+            (leftFrame, rightFrame) = self.calculateEpipolarLine(
+                fixedLeft, fixedRight)
+
         grayLeft = cv2.cvtColor(fixedLeft, cv2.COLOR_BGR2GRAY)
         grayRight = cv2.cvtColor(fixedRight, cv2.COLOR_BGR2GRAY)
 
+        # Optionally add noise reduction before depth map calculation.
         # grayLeft =\
         #     cv2.fastNlMeansDenoising(
         #         grayLeft,
@@ -187,16 +218,18 @@ Please run calibration first: {e}")
         #         templateWindowSize=5,
         #         searchWindowSize=21)
 
-        # grayLeft =\
-        #     cv2.medianBlur(grayLeft, 11)
-        # grayRight =\
-        #     cv2.medianBlur(grayRight, 11)
+        grayLeft =\
+            cv2.medianBlur(grayLeft, 11)
+        grayRight =\
+            cv2.medianBlur(grayRight, 11)
 
         depth = stereoMatcher.compute(grayLeft, grayRight)
-        # depth =\
-        #     cv2.medianBlur(depth, 5)
+
+        # Optionally add noise reduction after the depth map calculation.
         depth =\
-            cv2.GaussianBlur(depth, (9, 9), 0)
+            cv2.medianBlur(depth, 5)
+        # depth =\
+        #     cv2.GaussianBlur(depth, (9, 9), 0)
         depth = depth / self.DEPTH_VISUALIZATION_SCALE
 
         # Convert depth map to a format that can be accepted by the UI
@@ -212,7 +245,10 @@ Please run calibration first: {e}")
 
         return leftFrame, rightFrame, normalized_depth_color
 
+    # Calculates the epippolar lines for visualization purposes.
     def calculateEpipolarLine(self, leftFrame, rightFrame):
+        epipolarFrameLeft = leftFrame.copy()
+        epipolarFrameRight = rightFrame.copy()
         # sift = cv2.SIFT() causes crash during calling detectAndCompute
         sift = cv2.SIFT_create()
 
@@ -248,10 +284,12 @@ Please run calibration first: {e}")
         # and drawing its lines on left image
         lines1 = cv2.computeCorrespondEpilines(pts2.reshape(-1, 1, 2), 2, F)
         lines1 = lines1.reshape(-1, 3)
-        img5, img6 = drawLines(leftFrame, rightFrame, lines1, pts1, pts2)
+        img5, img6 = drawLines(
+            epipolarFrameLeft, epipolarFrameRight, lines1, pts1, pts2)
         # Find epilines corresponding to points in left image (first image) and
         # drawing its lines on right image
         lines2 = cv2.computeCorrespondEpilines(pts1.reshape(-1, 1, 2), 1, F)
         lines2 = lines2.reshape(-1, 3)
-        img3, img4 = drawLines(rightFrame, leftFrame, lines2, pts2, pts1)
-        return (leftFrame, rightFrame)
+        img3, img4 = drawLines(
+            epipolarFrameRight, epipolarFrameLeft, lines2, pts2, pts1)
+        return (epipolarFrameLeft, epipolarFrameRight)

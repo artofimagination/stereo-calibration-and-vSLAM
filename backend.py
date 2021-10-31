@@ -12,6 +12,7 @@ from PyQt5.QtGui import QImage, QPixmap
 import cv2
 
 
+# Signals used by the backend.
 class BackendSignals(QtCore.QObject):
     finished = QtCore.pyqtSignal()
     error = QtCore.pyqtSignal(tuple)
@@ -22,6 +23,8 @@ class BackendSignals(QtCore.QObject):
 
 
 class States(Enum):
+    # Restarts the sensors with updated config
+    UpdateSensorConfig = 0
     # SaveAndProcessImage (creating calibration image and camera info)
     SaveAndProcessImage = 1
     # Idle (spitting images on the UI)
@@ -68,6 +71,9 @@ class Backend(QObject):
         # Current depth map frame converted to QPixmap for UI displaying.
         self.depthPix = QPixmap()
 
+    ###########################################
+    # Below are the implementation of all slots connected to the gui
+    ###########################################
     def updateTextureThreshold(
           self,
           textureThreshold):
@@ -128,6 +134,24 @@ class Backend(QObject):
           disp12MaxDiff):
         self.sensor.disp12MaxDiff = disp12MaxDiff
 
+    def updateP1(self, p1):
+        self.sensor.P1 = p1
+
+    def updateP2(self, p2):
+        self.sensor.P2 = p2
+
+    def updateDrawEpipolar(self, draw):
+        self.sensor.drawEpipolar = draw
+
+    def updateResolution(self, index):
+        if index == 0:
+            self.sensor.camera_width = 640
+            self.sensor.camera_height = 480
+        elif index == 1:
+            self.sensor.camera_width = 1280
+            self.sensor.camera_height = 720
+        self.state = States.UpdateSensorConfig
+
     def updateCalib_image_index(self, calib_image_index):
         if calib_image_index != self.calibrator.calib_image_index:
             self.calibrator.calib_image_index = calib_image_index
@@ -142,6 +166,9 @@ class Backend(QObject):
     def updateIncrement(self, increment):
         self.calibrator.increment = increment
 
+    def updateBmType(self, bmType):
+        self.sensor.bmType = bmType
+
     def saveImage(self):
         self.state = States.SaveAndProcessImage
 
@@ -153,6 +180,10 @@ class Backend(QObject):
 
     def enableAdvancedCalib(self, value):
         self.calibrator.advancedCalib = value
+
+    ###########################################
+    # Slot implementation ends
+    ###########################################
 
     # Converts the incoming frames to QPixmap in order to visualize in Qt UI.
     def updateVideoPixmap(self, leftFrame, rightFrame, depthMap):
@@ -203,6 +234,7 @@ class Backend(QObject):
 
     # Main entry point.
     # Handles different backend states
+    #   UpdateSensorConfig (restarts the sensors if their config has changed)
     #   Idle (spitting images on the UI)
     #   SaveAndProcessImage (creating calibration image and camera info)
     #   Calibrate (generates the final calibration data)
@@ -215,6 +247,10 @@ class Backend(QObject):
             while(True):
                 if self.stop:
                     break
+
+                if self.state == States.UpdateSensorConfig:
+                    self.sensor.restartSensors()
+                    self.state = States.Idle
 
                 if self.state == States.Idle:
                     (self.leftFrame, self.rightFrame) =\

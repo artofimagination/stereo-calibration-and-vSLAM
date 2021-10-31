@@ -11,10 +11,6 @@ from PyQt5.QtCore import QObject
 # Stereo calibration result file
 CALIBRATION_RESULT = "output/calibration.npz"
 
-# Camera resolution
-CAMERA_WIDTH = 1280
-CAMERA_HEIGHT = 720
-
 
 # Generates calibration images and data
 # Calibrates the cameras and stores the result for future use.
@@ -217,6 +213,7 @@ corners on any of the sensors...")
             rightObjectPoints=rightObjectPoints,
             rightImagePoints=rightImagePoints)
 
+    # Returns the matching object and image points.
     def _getMatchingObjectAndImagePoints(
           self,
           requestedFilenames,
@@ -271,6 +268,7 @@ Throwing away current chessboard image pair..."
         else:
             self.rmsMessages.emit(rms, "Simple calibration mode enabled")
 
+    # Rectifies, undistorts the calibration data and stores in npz.
     def finalizingCalibration(
           self,
           leftCameraMatrix,
@@ -323,6 +321,7 @@ Throwing away current chessboard image pair..."
             rightMapY=rightMapY,
             rightROI=rightROI)
 
+    # Calibrates the left, then right camera, then does a stereo calibration.
     def calibrateSensor(self):
         filenames = []
         leftFilenames = []
