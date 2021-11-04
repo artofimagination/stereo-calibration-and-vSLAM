@@ -76,9 +76,10 @@ class MainWindow(QMainWindow):
         mainWidget = QWidget()
         mainWidget.setLayout(mainLayout)
         self.setCentralWidget(mainWidget)
-        self.desktop = QApplication.desktop()
-        self.screenRect = self.desktop.screenGeometry()
-        self.resize(self.screenRect.width(), self.screenRect.height())
+        
+        desktop = QApplication.desktop()
+        screenRect = desktop.screenGeometry()
+        self.resize(screenRect.width(), screenRect.height())
 
         if not os.path.isdir(self.SETTINGS_DIR):
             os.mkdir(self.SETTINGS_DIR)
