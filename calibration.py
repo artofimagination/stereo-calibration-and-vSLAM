@@ -251,12 +251,14 @@ corners on any of the sensors...")
 Throwing away current chessboard image pair..."
                 self.calib_image_index -= 1
                 self.calibImageIndexUpdated.emit(self.calib_image_index)
-                os.remove(
-                    "{}/{:06d}.jpg"
-                    .format(self.LEFT_IMAGE_DIR, self.calib_image_index))
-                os.remove(
-                  "{}/{:06d}.jpg"
-                  .format(self.RIGHT_IMAGE_DIR, self.calib_image_index))
+                filename = "{}/{:06d}.jpg".format(
+                    self.LEFT_IMAGE_DIR, self.calib_image_index)
+                if os.path.exists(filename):
+                    os.remove(filename)
+                filename = "{}/{:06d}.jpg".format(
+                    self.RIGHT_IMAGE_DIR, self.calib_image_index)
+                if os.path.exists(filename):
+                    os.remove(filename)
             else:
                 message += "    RMS is within limit, adding image..."
                 self.last_accepted_rms = rms

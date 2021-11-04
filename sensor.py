@@ -1,5 +1,3 @@
-import sys
-
 import cv2
 import numpy as np
 from calibration import CALIBRATION_RESULT
@@ -26,7 +24,6 @@ def drawLines(img1, img2, lines, pts1, pts2):
 # on the undistorted image stream
 class Sensor():
     REMAP_INTERPOLATION = cv2.INTER_LINEAR
-    DEPTH_VISUALIZATION_SCALE = 2048
 
     def __init__(self):
         self.running = False
@@ -47,11 +44,32 @@ class Sensor():
         self.textureThreshold = 0
         self.P1 = 0
         self.P2 = 0
-        self.left = None
-        self.right = None
         self.drawEpipolar = False
         self.camera_width = 640
         self.camera_height = 480
+
+        # List of video devices found in the OS (/dev/video*).
+        self.sensor_indices = list()
+        # Left camera capture instance
+        self.left = None
+        # Right camera capture instance
+        self.right = None
+        # Left camera index, that refers to the appropriate video device.
+        self.leftIndex = 2
+        # Right camera index, that refers to the appropriate video device.
+        self.rightIndex = 1
+
+    # Detects all available video devices in the OS.
+    def detectSensors(self):
+        for i in range(10):
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                print(f'Camera index available: {i}')
+                self.sensor_indices.append(i)
+            cap.release()
+
+        if len(self.sensor_indices) < 2:
+            raise Exception("Not all sensors are accessible")
 
     # Initializes and starts the sensors
     # If there are more than 2 sensors
@@ -59,19 +77,8 @@ class Sensor():
     def startSensors(self):
         print("Starting sensors...")
         if self.running is False:
-            indices = []
-            for i in range(10):
-                cap = cv2.VideoCapture(i)
-                if cap.isOpened():
-                    print(f'Camera index available: {i}')
-                    indices.append(i)
-                cap.release()
-
-            if len(indices) < 2:
-                print("Not all sensors are accessible")
-                sys.exit(1)
-            self.left = cv2.VideoCapture(indices[0])
-            self.right = cv2.VideoCapture(indices[1])
+            self.left = cv2.VideoCapture(self.sensor_indices[self.leftIndex])
+            self.right = cv2.VideoCapture(self.sensor_indices[self.rightIndex])
 
             # Increase the resolution
             self.left.set(cv2.CAP_PROP_FRAME_WIDTH, self.camera_width)
@@ -83,6 +90,12 @@ class Sensor():
             self.left.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
             self.right.set(
                 cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+
+            (left, right) = self.captureFrame()
+            if left is None or right is None:
+                raise Exception("No frames, quitting app. Try to start again,\
+usually the camera modules are ready by the second attempt")
+
             self.running = True
             print(f"Resolution is {self.camera_width}x{self.camera_height}")
             print("Sensors running...")
@@ -91,6 +104,7 @@ class Sensor():
 
     # Restart sensors.
     def restartSensors(self):
+        print("Restarting sensors...")
         self.running = False
         self.left.release()
         self.right.release()
@@ -102,7 +116,7 @@ class Sensor():
         # then retrieve to minimize latency between cameras
         if not self.left.grab() or not self.right.grab():
             print("No more frames")
-            return (None, None, None)
+            return (None, None)
 
         _, leftFrame = self.left.retrieve()
         _, rightFrame = self.right.retrieve()
@@ -122,7 +136,7 @@ Please run calibration first: {e}")
     def openCVShow(self):
         calibration = self.loadCalibFile()
         while True:
-            (leftFrame, rightFrame, depthMap) =\
+            (leftFrame, rightFrame, depthMap, _) =\
                 self.createDepthMap(calibration)
             numpy_horizontal_concat = np.concatenate(
                 (cv2.resize(leftFrame, (640, 480)),
@@ -224,13 +238,11 @@ Please run calibration first: {e}")
             cv2.medianBlur(grayRight, 11)
 
         depth = stereoMatcher.compute(grayLeft, grayRight)
-
         # Optionally add noise reduction after the depth map calculation.
         depth =\
             cv2.medianBlur(depth, 5)
         # depth =\
         #     cv2.GaussianBlur(depth, (9, 9), 0)
-        depth = depth / self.DEPTH_VISUALIZATION_SCALE
 
         # Convert depth map to a format that can be accepted by the UI
         normalized_depth = cv2.normalize(
@@ -243,7 +255,7 @@ Please run calibration first: {e}")
             normalized_depth.astype(np.uint8),
             cv2.COLOR_GRAY2RGB)
 
-        return leftFrame, rightFrame, normalized_depth_color
+        return leftFrame, rightFrame, normalized_depth_color, normalized_depth
 
     # Calculates the epippolar lines for visualization purposes.
     def calculateEpipolarLine(self, leftFrame, rightFrame):

@@ -4,7 +4,8 @@ import glob
 import shutil
 from pathlib import Path
 
-from backend import Backend, States
+from backend import Backend, States, Modes
+from pointCloudWidget import PointCloudWidget
 
 from PyQt5 import QtCore
 from PyQt5.QtCore import QThread
@@ -12,7 +13,7 @@ from PyQt5.QtWidgets import QMainWindow, QGridLayout, QAction
 from PyQt5.QtWidgets import QSpinBox, QLabel, QHBoxLayout, QFileDialog
 from PyQt5.QtWidgets import QWidget, QApplication, QCheckBox
 from PyQt5.QtWidgets import QPushButton, QTabWidget, QVBoxLayout
-from PyQt5.QtWidgets import QDoubleSpinBox, QComboBox
+from PyQt5.QtWidgets import QDoubleSpinBox, QComboBox, QGroupBox
 
 
 # Deletes all files in the content path.
@@ -52,9 +53,9 @@ class MainWindow(QMainWindow):
         self.worker.signals.framesSent.connect(self.updateVideo)
         self.worker.signals.finished.connect(self.thread_complete)
         self.worker.signals.error.connect(self.sigint_handler)
-        self.mode = "none"
 
         # init UI.
+        self.setMinimumSize(200, 100)
         mainLayout = QGridLayout()
         self._createMenu()
 
@@ -75,6 +76,9 @@ class MainWindow(QMainWindow):
         mainWidget = QWidget()
         mainWidget.setLayout(mainLayout)
         self.setCentralWidget(mainWidget)
+        self.desktop = QApplication.desktop()
+        self.screenRect = self.desktop.screenGeometry()
+        self.resize(self.screenRect.width(), self.screenRect.height())
 
         if not os.path.isdir(self.SETTINGS_DIR):
             os.mkdir(self.SETTINGS_DIR)
@@ -104,6 +108,8 @@ class MainWindow(QMainWindow):
             bm_mode=self.blockMatching.currentIndex(),
             bm_drawEpipolar=self.drawEpipolar.isChecked(),
             bm_resolution=self.resolutionBm.currentIndex(),
+            pc_fov=self.pointCloud.fov,
+            pc_samplingRatio=self.pointCloud.samplingRatio,
             cal_calib_image_index=self.calib_image_index.value(),
             cal_rms_limit=self.rms_limit.value(),
             cal_advanced=self.advanced.isChecked(),
@@ -185,9 +191,10 @@ class MainWindow(QMainWindow):
         self.drawEpipolar.setChecked(bool(settings["bm_drawEpipolar"]))
         self.smallerBlockSize.setValue(settings["bm_smallerBlockSize"])
         self.resolutionBm.setCurrentIndex(settings["bm_resolution"])
+        self.pointCloud.setFov(settings["pc_fov"])
+        self.pointCloud.setSamplingRatio(settings["pc_samplingRatio"])
         self.calib_image_index.setValue(settings["cal_calib_image_index"])
         self.rms_limit.setValue(settings["cal_rms_limit"])
-        print(settings["cal_advanced"])
         self.advanced.setChecked(bool(settings["cal_advanced"]))
         self.ignoreExistingImageData.setChecked(
             bool(settings["cal_ignoreExitingImageData"]))
@@ -331,10 +338,22 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.max_rms.setDecimals(5)
         self.max_rms.setSingleStep(0.005)
 
+        cameraLayout = QGridLayout()
+        displayGroupBox = QGroupBox("Visualisation")
+        displayGroupBox.setLayout(cameraLayout)
         self.video0Calib = QLabel()
+        self.calibSwapCameras = QPushButton("Swap lenses")
+        self.calibCameraIndexLeft = QComboBox()
+        cameraLayout.addWidget(self.video0Calib, 0, 0, 4, 3)
+        cameraLayout.addWidget(self.calibSwapCameras, 5, 0, 1, 1)
+        cameraLayout.addWidget(QLabel("Left camera indices"), 5, 1, 1, 1)
+        cameraLayout.addWidget(self.calibCameraIndexLeft, 5, 2, 1, 1)
         self.video1Calib = QLabel()
-        layout.addWidget(self.video0Calib, 0, 0, 1, 4)
-        layout.addWidget(self.video1Calib, 0, 4, 1, 4)
+        self.calibCameraIndexRight = QComboBox()
+        cameraLayout.addWidget(self.video1Calib, 0, 3, 4, 3)
+        cameraLayout.addWidget(QLabel("Right camera indices"), 5, 3, 1, 1)
+        cameraLayout.addWidget(self.calibCameraIndexRight, 5, 4, 1, 1)
+        layout.addWidget(displayGroupBox, 0, 0, 1, 1)
 
         start = QPushButton("Start")
         self.process = QPushButton("Process")
@@ -349,13 +368,18 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         buttonLayoutWidget = QWidget()
         buttonLayoutWidget.setLayout(buttonLayout)
 
-        layout.addWidget(self.video0Calib, 0, 0, 1, 4)
-        layout.addWidget(self.video1Calib, 0, 4, 1, 4)
-        layout.addWidget(labelsLayoutWidget, 1, 0, 1, 8)
-        layout.addWidget(optionsLayoutWidget, 2, 0, 1, 8)
-        layout.addWidget(configLayoutWidget, 3, 0, 1, 8)
-        layout.addWidget(buttonLayoutWidget, 4, 0, 1, 8)
+        layout.addWidget(labelsLayoutWidget, 1, 0, 1, 2)
+        layout.addWidget(optionsLayoutWidget, 2, 0, 1, 4)
+        layout.addWidget(configLayoutWidget, 3, 0, 1, 4)
+        layout.addWidget(buttonLayoutWidget, 4, 0, 1, 4)
         return layout
+
+    # Sets the point cloud graph resolution.
+    def _setPointCloudResolution(self, index):
+        if index == 0:
+            self.pointCloud.setResolution((640, 480))
+        elif index == 1:
+            self.pointCloud.setResolution((1280, 720))
 
     # Creates the block matching UI.
     def _createBlockMatchingConfiguratorUI(self):
@@ -369,9 +393,6 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.disp12MaxDiffUpdated = QtCore.pyqtSignal(int)
         layout = QGridLayout()
 
-        self.video0Bm = QLabel()
-        self.video1Bm = QLabel()
-        self.video_disp = QLabel()
         self.textureThresholdLabel = QLabel("textureThreshold")
         self.textureThreshold = QSpinBox()
         self.min_disp = QSpinBox()
@@ -426,75 +447,110 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             ["Block Matching", "Semi-Global Block Matching"])
         self.drawEpipolar = QCheckBox()
 
-        layout.addWidget(self.video0Bm, 0, 0, 1, 4)
-        layout.addWidget(self.video1Bm, 0, 4, 1, 4)
-        layout.addWidget(self.video_disp, 1, 2, 1, 4)
-        optionsLayout = QHBoxLayout()
-        optionsLayout.addWidget(QLabel("Resolution"))
-        optionsLayout.addWidget(self.resolutionBm)
-        optionsLayout.addWidget(QLabel("Block matching type"))
-        optionsLayout.addWidget(self.blockMatching)
-        optionsLayout.addWidget(QLabel("Draw epipolar lines"))
-        optionsLayout.addWidget(self.drawEpipolar)
-        optionsLayoutWidget = QWidget()
-        optionsLayoutWidget.setLayout(optionsLayout)
-        layout.addWidget(optionsLayoutWidget, 2, 0, 1, 8)
-        spinlayout = QHBoxLayout()
-        spinlayout.addWidget(self.textureThresholdLabel)
-        spinlayout.addWidget(self.textureThreshold)
-        spinlayout.addWidget(QLabel("min_disp"))
-        spinlayout.addWidget(self.min_disp)
-        spinlayout.addWidget(QLabel("num_disp"))
-        spinlayout.addWidget(self.num_disp)
-        spinlayout.addWidget(QLabel("blockSize"))
-        spinlayout.addWidget(self.blockSize)
-        spinlayout.addWidget(QLabel("uniquenessRatio"))
-        spinlayout.addWidget(self.uniquenessRatio)
-        spinlayout.addWidget(QLabel("speckleWindowSize"))
-        spinlayout.addWidget(self.speckleWindowSize)
-        spinlayout.addWidget(QLabel("speckleRange"))
-        spinlayout.addWidget(self.speckleRange)
-        spinlayout.addWidget(QLabel("disp12MaxDiff"))
-        spinlayout.addWidget(self.disp12MaxDiff)
-        spinLayoutWidget = QWidget()
-        spinLayoutWidget.setLayout(spinlayout)
-        layout.addWidget(spinLayoutWidget, 3, 0, 1, 8)
-        spinlayout2 = QHBoxLayout()
-        spinlayout2.addWidget(self.smallerBlockSizeLabel)
-        spinlayout2.addWidget(self.smallerBlockSize)
-        spinlayout2.addWidget(self.preFilterTypeLabel)
-        spinlayout2.addWidget(self.preFilterType)
-        spinlayout2.addWidget(self.preFilterCapLabel)
-        spinlayout2.addWidget(self.preFilterCap)
-        spinlayout2.addWidget(self.preFilterSizeLabel)
-        spinlayout2.addWidget(self.preFilterSize)
-        spinlayout2.addWidget(self.P1Label)
-        spinlayout2.addWidget(self.P1)
-        spinlayout2.addWidget(self.P2Label)
-        spinlayout2.addWidget(self.P2)
-        spinLayoutWidget2 = QWidget()
-        spinLayoutWidget2.setLayout(spinlayout2)
-        layout.addWidget(spinLayoutWidget2, 4, 0, 1, 8)
+        self.video0Bm = QLabel()
+        self.bmCameraIndexLeft = QComboBox()
+        self.bmSwapCameras = QPushButton("Swap lenses")
+        self.video1Bm = QLabel()
+        self.bmCameraIndexRight = QComboBox()
+        self.video_disp = QLabel()
+        self.pointCloud = PointCloudWidget()
+        self.fov = QSpinBox()
+        self.fov.setRange(1, 360)
+        self.fov.valueChanged.connect(
+            self.pointCloud.setFov)
+        self.samplingRatio = QSpinBox()
+        self.samplingRatio.setRange(50, 10000)
+        self.samplingRatio.setSingleStep(50)
+        self.samplingRatio.valueChanged.connect(
+            self.pointCloud.setSamplingRatio)
+        self.pointCloud.fovUpdated.connect(self.fov.setValue)
+        self.pointCloud.samplingRatioUpdated.connect(
+            self.samplingRatio.setValue)
+        self.resolutionBm.currentIndexChanged.connect(
+            self._setPointCloudResolution)
+
+        cameraLayout = QGridLayout()
+        displayGroupBox = QGroupBox("Visualisation")
+        displayGroupBox.setLayout(cameraLayout)
+        pointCloudLayout = QGridLayout()
+        pointCloudLayout.addWidget(self.pointCloud, 0, 0, 4, 4)
+        pointCloudLayout.addWidget(QLabel("Field of view"), 0, 4, 1, 1)
+        pointCloudLayout.addWidget(self.fov, 0, 5, 1, 1)
+        pointCloudLayout.addWidget(QLabel("Sampling ratio"), 1, 4, 1, 1)
+        pointCloudLayout.addWidget(self.samplingRatio, 1, 5, 1, 1)
+        pointCloudControl = QGroupBox("Point cloud")
+        pointCloudControl.setLayout(pointCloudLayout)
+        cameraLayout.addWidget(self.video0Bm, 0, 0, 4, 4)
+        cameraLayout.addWidget(self.bmSwapCameras, 5, 0, 1, 1)
+        cameraLayout.addWidget(QLabel("Left camera indices"), 5, 1, 1, 1)
+        cameraLayout.addWidget(self.bmCameraIndexLeft, 5, 2, 1, 1)
+        cameraLayout.addWidget(self.video1Bm, 0, 3, 4, 4)
+        cameraLayout.addWidget(QLabel("Right camera indices"), 5, 3, 1, 1)
+        cameraLayout.addWidget(self.bmCameraIndexRight, 5, 4, 1, 1)
+        cameraLayout.addWidget(self.video_disp, 6, 0, 4, 4)
+        cameraLayout.addWidget(pointCloudControl, 6, 3, 4, 4)
+        layout.addWidget(displayGroupBox, 0, 0, 1, 6)
+
+        bmControlLayout = QGridLayout()
+        bmControlLayout.addWidget(QLabel("Block matching type"), 0, 0, 1, 1)
+        bmControlLayout.addWidget(self.blockMatching, 0, 1, 1, 1)
+        bmControlLayout.addWidget(QLabel("Draw epipolar lines"), 0, 2, 1, 1)
+        bmControlLayout.addWidget(self.drawEpipolar, 0, 3, 1, 1)
+        bmControlLayout.addWidget(QLabel("Resolution"), 0, 4, 1, 1)
+        bmControlLayout.addWidget(self.resolutionBm, 0, 5, 1, 1)
+        bmControlLayout.addWidget(self.textureThresholdLabel, 1, 0, 1, 1)
+        bmControlLayout.addWidget(self.textureThreshold, 1, 1, 1, 1)
+        bmControlLayout.addWidget(QLabel("min_disp"), 1, 2, 1, 1)
+        bmControlLayout.addWidget(self.min_disp, 1, 3, 1, 1)
+        bmControlLayout.addWidget(QLabel("num_disp"), 1, 4, 1, 1)
+        bmControlLayout.addWidget(self.num_disp, 1, 5, 1, 1)
+        bmControlLayout.addWidget(QLabel("blockSize"), 1, 6, 1, 1)
+        bmControlLayout.addWidget(self.blockSize, 1, 7, 1, 1)
+        bmControlLayout.addWidget(QLabel("uniquenessRatio"), 1, 8, 1, 1)
+        bmControlLayout.addWidget(self.uniquenessRatio, 1, 9, 1, 1)
+        bmControlLayout.addWidget(QLabel("speckleWindowSize"), 1, 10, 1, 1)
+        bmControlLayout.addWidget(self.speckleWindowSize, 1, 11, 1, 1)
+        bmControlLayout.addWidget(QLabel("speckleRange"), 1, 12, 1, 1)
+        bmControlLayout.addWidget(self.speckleRange, 1, 13, 1, 1)
+        bmControlLayout.addWidget(QLabel("disp12MaxDiff"), 1, 14, 1, 1)
+        bmControlLayout.addWidget(self.disp12MaxDiff, 1, 15, 1, 1)
+        bmControlLayout.addWidget(self.smallerBlockSizeLabel, 2, 0, 1, 1)
+        bmControlLayout.addWidget(self.smallerBlockSize, 2, 1, 1, 1)
+        bmControlLayout.addWidget(self.preFilterTypeLabel, 2, 2, 1, 1)
+        bmControlLayout.addWidget(self.preFilterType, 2, 3, 1, 1)
+        bmControlLayout.addWidget(self.preFilterCapLabel, 2, 4, 1, 1)
+        bmControlLayout.addWidget(self.preFilterCap, 2, 5, 1, 1)
+        bmControlLayout.addWidget(self.preFilterSizeLabel, 2, 6, 1, 1)
+        bmControlLayout.addWidget(self.preFilterSize, 2, 7, 1, 1)
+        bmControlLayout.addWidget(self.P1Label, 2, 8, 1, 1)
+        bmControlLayout.addWidget(self.P1, 2, 9, 1, 1)
+        bmControlLayout.addWidget(self.P2Label, 2, 10, 1, 1)
+        bmControlLayout.addWidget(self.P2, 2, 11, 1, 1)
+        bmControlGroup = QGroupBox("Block Matching control")
+        bmControlGroup.setLayout(bmControlLayout)
+        layout.addWidget(bmControlGroup, 2, 0, 1, 8)
         buttonLayout = QHBoxLayout()
         buttonLayout.addWidget(self.start)
         buttonLayoutWidget = QWidget()
         buttonLayoutWidget.setLayout(buttonLayout)
-        layout.addWidget(buttonLayoutWidget, 5, 0, 1, 8)
+        layout.addWidget(buttonLayoutWidget, 4, 0, 1, 8)
         return layout
 
     # Updates the video stream labels.
-    def updateVideo(self, v0, v1, v_disp):
-        if self.mode == "calib":
+    def updateVideo(self, v0, v1, v_depth_color, v_depth_gray):
+        if self.worker.mode == Modes.Calibration:
             self.process.show()
             self.takeImage.show()
             self.ignoreExistingImageData.setDisabled(False)
             self.advanced.setDisabled(False)
             self.video0Calib.setPixmap(v0)
             self.video1Calib.setPixmap(v1)
-        elif self.mode == "bm":
+        elif self.worker.mode == Modes.BlockMatching:
             self.video0Bm.setPixmap(v0)
             self.video1Bm.setPixmap(v1)
-            self.video_disp.setPixmap(v_disp)
+            self.video_disp.setPixmap(v_depth_color)
+            self.pointCloud.setData(v_depth_gray)
+            self.pointCloud.update()
 
     # Shows/hides the appropriate controls for SGBM and BM.
     def updateBmType(self, index):
@@ -539,8 +595,24 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.RMSValue.setText(f"{rms}")
         self.calibInfo.setText(message)
 
+    # Updates the camera indices in all tabs.
+    def updateCameraIndices(self, leftIndex, rightIndex, indicesList):
+        if self.bmCameraIndexLeft.count() == 0:
+            for index in indicesList:
+                self.bmCameraIndexLeft.addItem(f"{index}")
+                self.bmCameraIndexRight.addItem(f"{index}")
+                self.calibCameraIndexLeft.addItem(f"{index}")
+                self.calibCameraIndexRight.addItem(f"{index}")
+        self.bmCameraIndexLeft.setCurrentIndex(leftIndex)
+        self.bmCameraIndexRight.setCurrentIndex(rightIndex)
+        self.calibCameraIndexLeft.setCurrentIndex(leftIndex)
+        self.calibCameraIndexRight.setCurrentIndex(rightIndex)
+
     # Sets the ranges, limits and signal connections for each UI element.
     def _initUIElements(self):
+        info = self.worker.getSensorIndices()
+        self.updateCameraIndices(*info)
+
         # wire bm signals/slots
         self.blockMatching.currentIndexChanged.connect(
             self.updateBmType)
@@ -557,8 +629,7 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             self.worker.updateUniquenessRatio)
         self.speckleWindowSize.valueChanged.connect(
             self.worker.updateSpeckleWindowSize)
-        self.speckleRange.valueChanged.connect(
-              self.worker.updateSpeckleRange)
+        self.speckleRange.valueChanged.connect(self.worker.updateSpeckleRange)
         self.disp12MaxDiff.valueChanged.connect(
               self.worker.updateDisp12MaxDiff)
         self.smallerBlockSize.valueChanged.connect(
@@ -567,12 +638,16 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
               self.worker.updatePreFilterType)
         self.preFilterSize.valueChanged.connect(
               self.worker.updatePrefilterSize)
-        self.preFilterCap.valueChanged.connect(
-              self.worker.updatePrefilterCap)
-        self.P1.valueChanged.connect(
-              self.worker.updateP1)
-        self.P2.valueChanged.connect(
-              self.worker.updateP2)
+        self.preFilterCap.valueChanged.connect(self.worker.updatePrefilterCap)
+        self.P1.valueChanged.connect(self.worker.updateP1)
+        self.P2.valueChanged.connect(self.worker.updateP2)
+        self.worker.signals.cameraIndicesUpdated.connect(
+            self.updateCameraIndices)
+        self.bmCameraIndexLeft.currentIndexChanged.connect(
+            self.worker.updateLeftCameraIndex)
+        self.bmCameraIndexRight.currentIndexChanged.connect(
+            self.worker.updateRightCameraIndex)
+        self.bmSwapCameras.clicked.connect(self.worker.swapSensorIndices)
 
         # wire calib signals/slots
         self.calibratorLayoutWidget.takeImageTriggered.connect(
@@ -583,20 +658,21 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             self.worker.updateResolution)
         self.ignoreExistingImageData.toggled.connect(
             self.worker.setIgnoreExistingImageData)
-        self.advanced.toggled.connect(
-            self.worker.enableAdvancedCalib)
+        self.advanced.toggled.connect(self.worker.enableAdvancedCalib)
         self.calib_image_index.valueChanged.connect(
             self.worker.updateCalib_image_index)
-        self.rms_limit.valueChanged.connect(
-            self.worker.updateRms_limit)
-        self.increment.valueChanged.connect(
-            self.worker.updateIncrement)
-        self.max_rms.valueChanged.connect(
-            self.worker.updateMax_rms)
+        self.rms_limit.valueChanged.connect(self.worker.updateRms_limit)
+        self.increment.valueChanged.connect(self.worker.updateIncrement)
+        self.max_rms.valueChanged.connect(self.worker.updateMax_rms)
         self.worker.signals.updateCalibInfo.connect(self.updateCalibInfo)
         self.worker.signals.rmsLimitUpdated.connect(self.rms_limit.setValue)
         self.worker.signals.calibImageIndexUpdated.connect(
             self.calib_image_index.setValue)
+        self.calibCameraIndexLeft.currentIndexChanged.connect(
+            self.worker.updateLeftCameraIndex)
+        self.calibCameraIndexRight.currentIndexChanged.connect(
+            self.worker.updateRightCameraIndex)
+        self.calibSwapCameras.clicked.connect(self.worker.swapSensorIndices)
 
         # load values
         try:
@@ -613,7 +689,7 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
     # just set to calibration mode, if it wasn't yet.
     def _startCalibration(self):
         print("Starting calibration...")
-        if self.mode == "calib":
+        if self.worker.mode == Modes.Calibration:
             print("Calibration is already running...")
             return
 
@@ -622,31 +698,31 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             self.ignoreExistingImageData.isChecked())
 
         # Execute
-        self.worker.state = States.Idle
-        if self.mode == "none":
+        if self.worker.mode == Modes.NoMode:
             self.worker.moveToThread(self.workerThread)
             self.workerThread.finished.connect(self.worker.deleteLater)
             self.workerThread.started.connect(self.worker.run)
             self.workerThread.start()
-        self.mode = "calib"
+        self.worker.state = States.Idle
+        self.worker.mode = Modes.Calibration
 
     # Start the thread with block matching.
     # if the thread is already running, it will not restart it
     # just set to block matching mode, if it wasn't yet.
     def _startBMConfiguration(self):
         print("Starting block matching...")
-        if self.mode == "bm":
+        if self.worker.mode == Modes.BlockMatching:
             print("Block Mathcing is already running...")
             return
 
         # Execute
-        self.worker.state = States.BlockMatching
-        if self.mode == "none":
+        if self.worker.mode == Modes.NoMode:
             self.worker.moveToThread(self.workerThread)
             self.workerThread.finished.connect(self.worker.deleteLater)
             self.workerThread.started.connect(self.worker.run)
             self.workerThread.start()
-        self.mode = "bm"
+        self.worker.state = States.Idle
+        self.worker.mode = Modes.BlockMatching
 
     # Terminate UI and the threads appropriately.
     def sigint_handler(self):

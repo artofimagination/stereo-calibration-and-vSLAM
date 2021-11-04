@@ -22,7 +22,11 @@ if __name__ == "__main__":
 
     if opencvView:
         sensor = Sensor()
-        sensor.startSensors()
+        try:
+            sensor.startSensors()
+        except Exception as e:
+            print(e)
+            sys.exit(1)
         sensor.openCVShow()
         print("Exiting application...")
     else:

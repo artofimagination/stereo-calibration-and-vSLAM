@@ -16,12 +16,14 @@ import cv2
 class BackendSignals(QtCore.QObject):
     finished = QtCore.pyqtSignal()
     error = QtCore.pyqtSignal(tuple)
-    framesSent = QtCore.pyqtSignal(object, object, object)
+    framesSent = QtCore.pyqtSignal(object, object, object, object)
     updateCalibInfo = QtCore.pyqtSignal(object, object)
     rmsLimitUpdated = QtCore.pyqtSignal(float)
     calibImageIndexUpdated = QtCore.pyqtSignal(int)
+    cameraIndicesUpdated = QtCore.pyqtSignal(int, int, list)
 
 
+# Represents the internal states.
 class States(Enum):
     # Restarts the sensors with updated config
     UpdateSensorConfig = 0
@@ -31,8 +33,16 @@ class States(Enum):
     Idle = 2
     # Calibrate (generates the final calibration data)
     Calibrate = 3
+
+
+# Feature modes
+class Modes(Enum):
+    # No mode is selected.
+    NoMode = 0
+    # Generating calibration data and images.
+    Calibration = 1
     # BlockMatching (generates depth map using block matching)
-    BlockMatching = 4
+    BlockMatching = 2
 
 
 # Controls all business logic in a seperate thread from the UI.
@@ -50,6 +60,7 @@ class Backend(QObject):
         # Sensor contains the camera handling, image retrieval
         # and image processing functions
         self.sensor = Sensor()
+        self.sensor.detectSensors()
         # Responsible for creating calibration images and calibration matrices
         self.calibrator = SensorCalibrator()
         self.calibrator.framesUpdated.connect(self.updateVideoPixmap)
@@ -58,18 +69,10 @@ class Backend(QObject):
         self.calibrator.calibImageIndexUpdated.connect(
             self.signals.calibImageIndexUpdated)
 
-        # Current left camera frame
-        self.leftFrame = None
-        # Current right camera frame
-        self.rightFrame = None
+        # Holds the current execution state
         self.state = States.Idle
-
-        # Current left camera frame converted to QPixmap for UI displaying.
-        self.leftPix = QPixmap()
-        # Current right camera frame converted to QPixmap for UI displaying.
-        self.rightPix = QPixmap()
-        # Current depth map frame converted to QPixmap for UI displaying.
-        self.depthPix = QPixmap()
+        # Holds the current feature mode.
+        self.mode = Modes.NoMode
 
     ###########################################
     # Below are the implementation of all slots connected to the gui
@@ -181,20 +184,53 @@ class Backend(QObject):
     def enableAdvancedCalib(self, value):
         self.calibrator.advancedCalib = value
 
+    def updateLeftCameraIndex(self, left):
+        if left != self.sensor.leftIndex:
+            self.sensor.leftIndex = left
+            self.state = States.UpdateSensorConfig
+            self.signals.cameraIndicesUpdated.emit(
+                self.sensor.leftIndex,
+                self.sensor.rightIndex,
+                self.sensor.sensor_indices)
+
+    def updateRightCameraIndex(self, right):
+        if right != self.sensor.rightIndex:
+            self.sensor.rightIndex = right
+            self.state = States.UpdateSensorConfig
+            self.signals.cameraIndicesUpdated.emit(
+                self.sensor.leftIndex,
+                self.sensor.rightIndex,
+                self.sensor.sensor_indices)
+
+    def swapSensorIndices(self):
+        self.signals.cameraIndicesUpdated.emit(
+            self.sensor.rightIndex,
+            self.sensor.leftIndex,
+            self.sensor.sensor_indices)
+
     ###########################################
     # Slot implementation ends
     ###########################################
 
+    # Returns the current sesnor indices and sensor index list.
+    def getSensorIndices(self):
+        return (self.sensor.leftIndex,
+                self.sensor.rightIndex,
+                self.sensor.sensor_indices)
+
     # Converts the incoming frames to QPixmap in order to visualize in Qt UI.
     def updateVideoPixmap(self, leftFrame, rightFrame, depthMap):
+        leftPix = QPixmap()
+        rightPix = QPixmap()
+        depthPix = QPixmap()
         if depthMap is not None:
             img = QImage(
                 depthMap,
                 depthMap.shape[1],
                 depthMap.shape[0],
                 QImage.Format_RGB888)
-            self.depthPix = QPixmap.fromImage(img)
-            self.depthPix = self.depthPix.scaled(
+            depthPix = QPixmap.fromImage(img)
+            depthPix = depthPix.scaled(
                 600,
                 350,
                 Qt.KeepAspectRatio,
@@ -208,8 +244,8 @@ class Backend(QObject):
                 leftFrame.shape[1],
                 leftFrame.shape[0],
                 QImage.Format_RGB888)
-            self.leftPix = QPixmap.fromImage(img)
-            self.leftPix = self.leftPix.scaled(
+            leftPix = QPixmap.fromImage(img)
+            leftPix = leftPix.scaled(
                 600,
                 350,
                 Qt.KeepAspectRatio,
@@ -223,66 +259,82 @@ class Backend(QObject):
                 rightFrame.shape[1],
                 rightFrame.shape[0],
                 QImage.Format_RGB888)
-            self.rightPix = QPixmap.fromImage(img)
-            self.rightPix = self.rightPix.scaled(
+            rightPix = QPixmap.fromImage(img)
+            rightPix = rightPix.scaled(
                 600,
                 350,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation)
-        self.signals.framesSent.emit(
-                  self.leftPix, self.rightPix, self.depthPix)
+        return (leftPix, rightPix, depthPix)
 
     # Main entry point.
-    # Handles different backend states
-    #   UpdateSensorConfig (restarts the sensors if their config has changed)
-    #   Idle (spitting images on the UI)
-    #   SaveAndProcessImage (creating calibration image and camera info)
-    #   Calibrate (generates the final calibration data)
-    #   BlockMatching (generates depth map using block matching)
+    # Handles different backend states and feature modes
+    # Modes:
+    #   Calibration
+    #   BlockMatching
+    # Each mode can have multiple internal states.
     @QtCore.pyqtSlot()
     def run(self):
-        self.sensor.startSensors()
-        calibrationFileLoaded = False
         try:
+            depth_gray = None
+            leftFrame = None
+            rightFrame = None
+            leftPix = QPixmap()
+            rightPix = QPixmap()
+            depthPix = QPixmap()
+            self.sensor.startSensors()
+            self.signals.cameraIndicesUpdated.emit(
+                self.sensor.leftIndex,
+                self.sensor.rightIndex,
+                self.sensor.sensor_indices)
+            calibrationFileLoaded = False
             while(True):
                 if self.stop:
                     break
 
-                if self.state == States.UpdateSensorConfig:
-                    self.sensor.restartSensors()
-                    self.state = States.Idle
+                if self.mode == Modes.Calibration:
+                    if self.state == States.Idle:
+                        (leftFrame, rightFrame) =\
+                            self.sensor.captureFrame()
+                        (leftPix, rightPix, depthPix) = self.updateVideoPixmap(
+                            leftFrame, rightFrame, None)
 
-                if self.state == States.Idle:
-                    (self.leftFrame, self.rightFrame) =\
-                        self.sensor.captureFrame()
-                    self.updateVideoPixmap(
-                        self.leftFrame, self.rightFrame, None)
+                    if self.state == States.UpdateSensorConfig:
+                        self.sensor.restartSensors()
+                        self.state = States.Idle
 
-                if self.state == States.SaveAndProcessImage:
-                    self.calibrator.saveAndProcessImage(
-                        self.leftFrame, self.rightFrame)
-                    if self.calibrator.advancedCalib:
-                        rms, _ = self.calibrator.calibrateSensor()
-                        self.calibrator.checkRMS(rms)
-                    self.state = States.Idle
+                    if self.state == States.SaveAndProcessImage:
+                        (leftFrame, rightFrame) =\
+                            self.sensor.captureFrame()
+                        self.calibrator.saveAndProcessImage(
+                            leftFrame, rightFrame)
+                        if self.calibrator.advancedCalib:
+                            rms, _ = self.calibrator.calibrateSensor()
+                            self.calibrator.checkRMS(rms)
+                        self.state = States.Idle
 
-                if self.state == States.Calibrate:
-                    _, params = self.calibrator.calibrateSensor()
-                    self.calibrator.finalizingCalibration(*params)
-                    self.state = States.Idle
+                    if self.state == States.Calibrate:
+                        _, params = self.calibrator.calibrateSensor()
+                        self.calibrator.finalizingCalibration(*params)
+                        calibrationFileLoaded = False
+                        self.state = States.Idle
 
-                if self.state == States.BlockMatching:
-                    if calibrationFileLoaded is False:
-                        calibration = self.sensor.loadCalibFile()
-                        calibrationFileLoaded = True
-                    (leftFrame, rightFrame, depthMap) =\
-                        self.sensor.createDepthMap(calibration)
-                    self.updateVideoPixmap(leftFrame, rightFrame, depthMap)
-                else:
-                    calibrationFileLoaded = False
+                elif self.mode == Modes.BlockMatching:
+                    if self.state == States.Idle:
+                        if calibrationFileLoaded is False:
+                            calibration = self.sensor.loadCalibFile()
+                            calibrationFileLoaded = True
+                        (leftFrame, rightFrame, depth_color, depth_gray) =\
+                            self.sensor.createDepthMap(calibration)
+                        (leftPix, rightPix, depthPix) = self.updateVideoPixmap(
+                            leftFrame, rightFrame, depth_color)
+
+                    if self.state == States.UpdateSensorConfig:
+                        self.sensor.restartSensors()
+                        self.state = States.Idle
 
                 self.signals.framesSent.emit(
-                    self.leftPix, self.rightPix, self.depthPix)
+                    leftPix, rightPix, depthPix, depth_gray)
         except Exception:
             self.sensor.left.release()
             self.sensor.right.release()

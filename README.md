@@ -53,11 +53,12 @@ When settigns are saved, also the calibration images are stored in calibImages f
 # Stereo calibration tips
 First thing first, I am NOT an image/video processing specialist, there are more advanced people to tell you the right answer, see **Sources for camera calibration and depth map generation**. This project is just a tiny Minimum Viable Product for a larger project I try to learn more about.<br>
 My tips are based on personal experience.
- * If you have a DIY stereo camera, make sure, they are aligned as much as possible. During my first attempt, one camera had a different pitch and I was very surprised when the depth map was a nonsense.
+ * If you have a DIY stereo camera, make sure, they are aligned and focused as much as possible. During my first attempt, one camera had a different pitch and I was very surprised when the depth map was a nonsense.
  * If you choose the baseline distance (distance between the lenses) too small, it will not have a too good depth detection (To large isn't good either). I had first some 60 mm, which seemed to be a bit small, so I cahnged it to 75 in the final design. 
  * It is very important to have a very accurate chessboard pattern. I think it cannot be stressed enough. I had many failed attempts, because there were slight bumps in my paper made pattern stick on the wall. Probably a solid material pattern is preferable.
  * Do not use square shaped pattern, column and row count shall not be equal
  * Probably less of a concern, but have a fix stand of your camera when taking pictures, shakyness can be problematic, especially if your cameras are not synced, like mine.
+ * Make sure the left and right cameras are not swapped, use the UI to swap them if they are.
  * According to the wise people on the internet RMS value below 0.5 is acceptable. I tried to set it between 0.1-0.3
  * In **Advanced mode** I usually set 0.13-0.15 start RMS limit, with 0.005 increment and max RMS of 0.27-0.3
  * Take many pictures, from different angles and different distances. I have got low RMS images sets in the range of 300 mm - 2000 mm of distance from teh chessboard pattern. I usually took 30-50 images
@@ -103,12 +104,14 @@ Since I am not really knowledgable in the area I basically did a lots of trial a
   - P1: 99
   - P2: 999
 
+* Make sure the left and right cameras are not swapped, use the UI to swap them if they are.
 * I noticed that P1, and P2 had a major effect on the speckle reduction.
 * Check the link below, those guys had different setups. My values are generally an average of the other documented attempts
 * If you get nonsense or extreme amount of speckle and very little depth map with roughly similar config, then most likely your lenses are not well aligned or your chesspattern is not the most accurate
 
 
 # Sources for camera calibration and depth map generation<br>
+https://github.com/mmatl/pyrender/issues/14
 https://answers.opencv.org/question/182049/pythonstereo-disparity-quality-problems/<br>
 https://becominghuman.ai/stereo-3d-reconstruction-with-opencv-using-an-iphone-camera-part-i-c013907d1ab5<br>
 https://github.com/OmarPadierna/3DReconstruction<br>
