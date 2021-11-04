@@ -98,7 +98,9 @@ The majority of the following description is copied from this [OpenCV answer](ht
       - _P1, P2_ - used in filtering the disparity map before returning to reject small blocks. May reduce noise.
 
 ### Point cloud visualization
-It is a simple visualizer tool, that requires the depth map as an input and will generate a 3D point cloud representation. Check the original [example](https://gist.github.com/markjay4k/da2f55e28514be7160a7c5fbf95bd243). Note: it uses pyqtgraph scatterplot. It is not a very fast way to represent, but good for initial development.
+It is a simple visualizer tool, that requires the depth map as an input and will generate a 3D point cloud representation. Check the [original scatterplot example](https://gist.github.com/markjay4k/da2f55e28514be7160a7c5fbf95bd243).<br>
+There is also a [minimum example](https://github.com/artofimagination/stereo-calibration-and-vSLAM/blob/master/componentExamples/main_pointCloudVisualizer.py) if you are only interested in this widget and not the whole app. It is pyqt compatible.<br>
+Note: it uses pyqtgraph scatterplot. It is not a very fast way to represent, but good for initial development.
  * **Parameters**
       - _fov_ - sets the field of view
       - _samplingRatio_ - allows the user to change how many points to show. For example selecting 10, will show every 10th point only. Improves performance. For me > 200 settings was reasonable fast.
