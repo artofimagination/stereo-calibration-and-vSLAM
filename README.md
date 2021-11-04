@@ -1,5 +1,5 @@
 # Stereo camera calibration and vSLAM
-Repo to produce stereo depth map and do mapping a navigation
+Repo to produce stereo depth map, do mapping and navigation
 
 # Content
 * [Stereo Calibration tab](#stereo-calibration-tab)<br>
