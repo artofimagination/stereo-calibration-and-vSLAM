@@ -5,8 +5,8 @@ Repo to produce stereo depth map, do mapping and navigation
 * [Stereo Calibration tab](#stereo-calibration-tab)<br>
 * [Stereo Calibration tips](#stereo-calibration-tips)<br>
 * [Block matching tab](#block-matching-tab)<br>
-* [Point cloud visualization](#point-cloud-visualization)<br>
 * [Block matching tips](#block-matching-tips)<br>
+* [Point cloud visualization](#point-cloud-visualization)<br>
 * [Calibration and block matching links](#sources-for-camera-calibration-and-depth-map-generation)<br>
 
 # Intro
