@@ -5,6 +5,7 @@ Repo to produce stereo depth map and do mapping a navigation
 * [Stereo Calibration tab](#stereo-calibration-tab)<br>
 * [Stereo Calibration tips](#stereo-calibration-tips)<br>
 * [Block matching tab](#block-matching-tab)<br>
+* [Point cloud visualization](#point-cloud-visualization)<br>
 * [Block matching tips](#block-matching-tips)<br>
 * [Calibration and block matching links](#sources-for-camera-calibration-and-depth-map-generation)<br>
 
@@ -26,6 +27,8 @@ To run the app run ```python main.py```<br>
 * **Save settings** - saves all UI control values into a settings npz file. Also saves feature specific info and files to locations those name is identical to the settings name. Saving the settings will generate a lastSaved folder/folder as well. this is useful for **Default load on startup**
 * **Load settings** - loads saved UI control values and additional data/files
 * **Default load on startup** - when the applciation starts it will immediately load the latest saved settings.
+* **Swap lenses** - each tab has this feature. It allows the user to swap left and right cameras in case the app recognized them in the wrong order
+* **Select camera indices** - each tab has this feature. It allows the user to custom select a camera device. It will exit the app if left and right indices are the same. Useful, when there are more than two cameras connected to the system.
 
 # Stereo Calibration tab
 It allows the user to generate chessboard calibration images and create the calibrate the stereo camera for later depth map streaming.
@@ -93,6 +96,12 @@ The majority of the following description is copied from this [OpenCV answer](ht
       - _smallerBlockSize_ - in theory this should reduce noise, but I couldn't produce any effect
  * **SGBM parameters**
       - _P1, P2_ - used in filtering the disparity map before returning to reject small blocks. May reduce noise.
+
+### Point cloud visualization
+It is a simple visualizer tool, that requires the depth map as an input and will generate a 3D point cloud representation. Check the original [example](https://gist.github.com/markjay4k/da2f55e28514be7160a7c5fbf95bd243). Note: it uses pyqtgraph scatterplot. It is not a very fast way to represent, but good for initial development.
+ * **Parameters**
+      - _fov_ - sets the field of view
+      - _samplingRatio_ - allows the user to change how many points to show. For example selecting 10, will show every 10th point only. Improves performance. For me > 200 settings was reasonable fast.
 
 ### Resolution
 Performance can be quite different with different resolution, hence I added the feature of changing it. Note: Blok Matching resolution MUST be the same as the calibration for appropriate results.
