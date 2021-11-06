@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 
 from backend import Backend, States, Modes
-from pointCloudWidget import PointCloudWidget
+from pointCloudGLWidget import PointCloudGLWidget
 
 from PyQt5 import QtCore
 from PyQt5.QtCore import QThread
@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
         mainWidget = QWidget()
         mainWidget.setLayout(mainLayout)
         self.setCentralWidget(mainWidget)
-        
+
         desktop = QApplication.desktop()
         screenRect = desktop.screenGeometry()
         self.resize(screenRect.width(), screenRect.height())
@@ -375,13 +375,6 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         layout.addWidget(buttonLayoutWidget, 4, 0, 1, 4)
         return layout
 
-    # Sets the point cloud graph resolution.
-    def _setPointCloudResolution(self, index):
-        if index == 0:
-            self.pointCloud.setResolution((640, 480))
-        elif index == 1:
-            self.pointCloud.setResolution((1280, 720))
-
     # Creates the block matching UI.
     def _createBlockMatchingConfiguratorUI(self):
         self.win_sizeUpdated = QtCore.pyqtSignal(int)
@@ -454,21 +447,19 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.video1Bm = QLabel()
         self.bmCameraIndexRight = QComboBox()
         self.video_disp = QLabel()
-        self.pointCloud = PointCloudWidget()
+        self.pointCloud = PointCloudGLWidget()
         self.fov = QSpinBox()
         self.fov.setRange(1, 360)
         self.fov.valueChanged.connect(
             self.pointCloud.setFov)
         self.samplingRatio = QSpinBox()
-        self.samplingRatio.setRange(50, 10000)
+        self.samplingRatio.setRange(1, 10000)
         self.samplingRatio.setSingleStep(50)
         self.samplingRatio.valueChanged.connect(
             self.pointCloud.setSamplingRatio)
         self.pointCloud.fovUpdated.connect(self.fov.setValue)
         self.pointCloud.samplingRatioUpdated.connect(
             self.samplingRatio.setValue)
-        self.resolutionBm.currentIndexChanged.connect(
-            self._setPointCloudResolution)
 
         cameraLayout = QGridLayout()
         displayGroupBox = QGroupBox("Visualisation")
@@ -550,8 +541,8 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             self.video0Bm.setPixmap(v0)
             self.video1Bm.setPixmap(v1)
             self.video_disp.setPixmap(v_depth_color)
-            self.pointCloud.setData(v_depth_gray)
-            self.pointCloud.update()
+            self.pointCloud.calculatePointcloud(v_depth_gray)
+            self.pointCloud.updateGL()
 
     # Shows/hides the appropriate controls for SGBM and BM.
     def updateBmType(self, index):

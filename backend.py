@@ -333,15 +333,12 @@ class Backend(QObject):
                         self.sensor.restartSensors()
                         self.state = States.Idle
 
-                self.signals.framesSent.emit(
-                    leftPix, rightPix, depthPix, depth_gray)
+                self.signals.framesSent.emit(leftPix, rightPix, depthPix, depth_gray)
         except Exception:
-            self.sensor.left.release()
-            self.sensor.right.release()
+            self.sensor.releaseVideoDevices()
             traceback.print_exc()
             exctype, value = sys.exc_info()[:2]
             self.signals.error.emit((exctype, value, traceback.format_exc()))
         finally:
-            self.sensor.left.release()
-            self.sensor.right.release()
+            self.sensor.releaseVideoDevices()
             self.signals.finished.emit()  # Done

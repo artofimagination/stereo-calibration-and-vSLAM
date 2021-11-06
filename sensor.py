@@ -50,6 +50,7 @@ class Sensor():
 
         # List of video devices found in the OS (/dev/video*).
         self.sensor_indices = list()
+        self.sensor_devices = list()
         # Left camera capture instance
         self.left = None
         # Right camera capture instance
@@ -66,7 +67,7 @@ class Sensor():
             if cap.isOpened():
                 print(f'Camera index available: {i}')
                 self.sensor_indices.append(i)
-            cap.release()
+                self.sensor_devices.append(cap)
 
         if len(self.sensor_indices) < 2:
             raise Exception("Not all sensors are accessible")
@@ -77,8 +78,8 @@ class Sensor():
     def startSensors(self):
         print("Starting sensors...")
         if self.running is False:
-            self.left = cv2.VideoCapture(self.sensor_indices[self.leftIndex])
-            self.right = cv2.VideoCapture(self.sensor_indices[self.rightIndex])
+            self.left = self.sensor_devices[self.leftIndex]
+            self.right = self.sensor_devices[self.rightIndex]
 
             # Increase the resolution
             self.left.set(cv2.CAP_PROP_FRAME_WIDTH, self.camera_width)
@@ -106,8 +107,8 @@ usually the camera modules are ready by the second attempt")
     def restartSensors(self):
         print("Restarting sensors...")
         self.running = False
-        self.left.release()
-        self.right.release()
+        self.releaseVideoDevices()
+        self.detectSensors()
         self.startSensors()
 
     # Capture frame in an efficient way.
@@ -132,6 +133,12 @@ usually the camera modules are ready by the second attempt")
 Please run calibration first: {e}")
         return calibration
 
+    def releaseVideoDevices(self):
+        for dev in self.sensor_devices:
+            dev.release()
+        self.sensor_devices.clear()
+        self.sensor_indices.clear()
+
     # Opens the frame stream with cv2 library calls (No Qt UI is used)
     def openCVShow(self):
         calibration = self.loadCalibFile()
@@ -147,8 +154,7 @@ Please run calibration first: {e}")
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
-        self.left.release()
-        self.right.release()
+        self.releaseVideoDevices()
         cv2.destroyAllWindows()
 
     # Generates depth map using block matching, or semi global block matching.
@@ -232,10 +238,10 @@ Please run calibration first: {e}")
         #         templateWindowSize=5,
         #         searchWindowSize=21)
 
-        grayLeft =\
-            cv2.medianBlur(grayLeft, 11)
-        grayRight =\
-            cv2.medianBlur(grayRight, 11)
+        # grayLeft =\
+        #     cv2.medianBlur(grayLeft, 11)
+        # grayRight =\
+        #     cv2.medianBlur(grayRight, 11)
 
         depth = stereoMatcher.compute(grayLeft, grayRight)
         # Optionally add noise reduction after the depth map calculation.

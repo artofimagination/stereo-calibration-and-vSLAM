@@ -39,6 +39,7 @@ class PointCloudWidget(QWidget):
         self._recreateScatterPlot(count)
 
         self.data = list()
+        self.quarter = 0
 
     # Sets the field of view.
     def setFov(self, value):
@@ -82,9 +83,10 @@ class PointCloudWidget(QWidget):
 
     # Calculates the 3D point cloud from depth map frame.
     def calculatePointcloud(self, depth):
+        # TODO: FOV doesn't seem to work that well. need improvement.
         height = depth.shape[0]
         width = depth.shape[1]
-        fy = 0.5 / np.tan(self.fov * 0.5)  # assume aspectRatio is one.
+        fy = 0.5 / np.tan(self.fov * 0.5)
         aspectRatio = width / height
         fx = fy / aspectRatio
         mask = np.where(depth >= 0)
@@ -93,7 +95,7 @@ class PointCloudWidget(QWidget):
 
         normalized_x = (x.astype(np.float32) - width * 0.5) / width
         normalized_y = (y.astype(np.float32) - height * 0.5) / height
-        # 255 represents the camera window (not a proper solution),
+        # TODO: 255 represents the camera window (not a proper solution),
         # should be incorporated with the fov calculations.
         world_x = normalized_x * 255 / fx
         world_y = normalized_y * 255 / fy
@@ -115,15 +117,21 @@ class PointCloudWidget(QWidget):
 
     # Updates the scatterplot items with new positions and colors.
     def update(self):
-        for i in range(len(self.data)):
+        if self.quarter > 16:
+            self.quarter = 1
+        for i in range(int(self.quarter * len(self.data) / 16)):
             color = pg.glColor(
                 self.data[i][2], 255 - self.data[i][2], 0)
+            if self.data[i][2] == 0:
+                color = pg.glColor(0, 0, 0)
             pts = np.vstack(
                 [self.data[i][0],
                  self.data[i][2],
                  self.data[i][1]]).transpose()
-            self.vertices[i].setData(
-                pos=pts,
-                color=color,
-                size=2,
-                pxMode=True)
+            if (self.vertices[i].color != color):
+                self.vertices[i].setData(
+                    pos=pts,
+                    color=color,
+                    size=2,
+                    pxMode=True)
+        self.quarter += 1

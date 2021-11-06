@@ -98,6 +98,10 @@ The majority of the following description is copied from this [OpenCV answer](ht
       - _P1, P2_ - used in filtering the disparity map before returning to reject small blocks. May reduce noise.
 
 ### Point cloud visualization
+I've got two solutions
+ * **Using OpenGL**
+ It is a more sophisicated tool which allows high performance rendering. See the [original example](https://github.com/SoonminHwang/py-pointcloud-viewer). I adapted it [here]() to draw depthmap numpy arrays.
+ * **Using pyqtgraphs**
 It is a simple visualizer tool, that requires the depth map as an input and will generate a 3D point cloud representation. Check the original [example](https://gist.github.com/markjay4k/da2f55e28514be7160a7c5fbf95bd243). Note: it uses pyqtgraph scatterplot. It is not a very fast way to represent, but good for initial development.
  * **Parameters**
       - _fov_ - sets the field of view
@@ -128,6 +132,7 @@ Since I am not really knowledgable in the area I basically did a lots of trial a
 
 
 # Sources for camera calibration and depth map generation<br>
+https://github.com/SoonminHwang/py-pointcloud-viewer
 https://github.com/mmatl/pyrender/issues/14
 https://answers.opencv.org/question/182049/pythonstereo-disparity-quality-problems/<br>
 https://becominghuman.ai/stereo-3d-reconstruction-with-opencv-using-an-iphone-camera-part-i-c013907d1ab5<br>
