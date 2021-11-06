@@ -19,7 +19,9 @@ Any contribution is appreciated.
 
 ## Install
 The app was tested on Ubuntu 20.04 with Python 3.8. Can't guarantie it works on windows.<br>
-To install dependencies run ```pip install -r requirements.txt```<br>
+To install dependencies run<br> 
+```pip install -r requirements.txt```<br>
+```sudo apt install python3-pyqt5.qtopengl```<br>
 To run the app run ```python main.py```<br>
 
 
