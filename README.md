@@ -19,7 +19,9 @@ Any contribution is appreciated.
 
 ## Install
 The app was tested on Ubuntu 20.04 with Python 3.8. Can't guarantie it works on windows.<br>
-To install dependencies run ```pip install -r requirements.txt```<br>
+To install dependencies run<br> 
+```pip install -r requirements.txt```<br>
+```sudo apt install python3-pyqt5.qtopengl```<br>
 To run the app run ```python main.py```<br>
 
 
@@ -99,9 +101,9 @@ The majority of the following description is copied from this [OpenCV answer](ht
 
 ### Point cloud visualization
 I've got two solutions
- * **Using OpenGL (pyqt compatible)**
- It is a more sophisicated tool which allows high performance rendering. See the [original example](https://github.com/SoonminHwang/py-pointcloud-viewer). I adapted it [here]() to draw depthmap numpy arrays.
- * **Using pyqtgraphs**
+ * **Using OpenGL (pyqt compatible)**<br>
+ It is a more sophisicated tool which allows high performance rendering. See the [original example](https://github.com/SoonminHwang/py-pointcloud-viewer). I adapted it [here](https://github.com/artofimagination/stereo-calibration-and-vSLAM/blob/master/componentExamples/main_pointCloudGLVisualizer.py) to draw depthmap numpy arrays.
+ * **Using pyqtgraphs**<br>
 It is a simple visualizer tool, that requires the depth map as an input and will generate a 3D point cloud representation. Check the original [original scatterplot example](https://gist.github.com/markjay4k/da2f55e28514be7160a7c5fbf95bd243).<br>
 There is also a [minimum example](https://github.com/artofimagination/stereo-calibration-and-vSLAM/blob/master/componentExamples/main_pointCloudVisualizer.py) if you are only interested in this widget and not the whole app. It is pyqt compatible.<br>
 Note: it uses pyqtgraph scatterplot. It is not a very fast way to represent, but good for initial development.
