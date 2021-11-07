@@ -8,6 +8,8 @@ Repo to produce stereo depth map, do mapping and navigation
 * [Block matching tips](#block-matching-tips)<br>
 * [Point cloud visualization](#point-cloud-visualization)<br>
 * [Calibration and block matching links](#sources-for-camera-calibration-and-depth-map-generation)<br>
+* [Feature detection tab](#feature-detection-tab)<br>
+* [Feature detection links](#sources-for-camera-calibration-and-depth-map-generation)<br>
 
 # Intro
 This repo is heavily under development.
@@ -151,7 +153,7 @@ The tab shows the matches of two images captured by the same lense at different 
 
 ![feature detection](https://github.com/artofimagination/stereo-vSLAM/blob/master/resources/ReadmeImg3.png)
 
-# UI use
+## UI use
 There are only a few parameters present. In order to connect to the cameras and produce the matching, press **Start**
  * **Parameters**
      - _Feature detector_ - allows the user to change the detector algorithm between sift, orb and surf. Note surf is not supported with BF matcher in this app. It will terminate with an exception.
