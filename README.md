@@ -138,8 +138,8 @@ Since I am not really knowledgable in the area I basically did a lots of trial a
 
 
 # Sources for camera calibration and depth map generation<br>
-https://github.com/SoonminHwang/py-pointcloud-viewer
-https://github.com/mmatl/pyrender/issues/14
+https://github.com/SoonminHwang/py-pointcloud-viewer<br>
+https://github.com/mmatl/pyrender/issues/14<br>
 https://answers.opencv.org/question/182049/pythonstereo-disparity-quality-problems/<br>
 https://becominghuman.ai/stereo-3d-reconstruction-with-opencv-using-an-iphone-camera-part-i-c013907d1ab5<br>
 https://github.com/OmarPadierna/3DReconstruction<br>
@@ -160,5 +160,5 @@ There are only a few parameters present. In order to connect to the cameras and 
      - _Feature matcher_ - allows the user to change the detector matching algorithm ("BF" Brute force and FLANN)
 
 # Sources for feature detection and matching
-https://www.youtube.com/watch?v=2GJuEIh4xGo
+https://www.youtube.com/watch?v=2GJuEIh4xGo<br>
 https://github.com/FoamoftheSea/KITTI_visual_odometry
