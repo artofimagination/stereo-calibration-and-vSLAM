@@ -161,4 +161,5 @@ There are only a few parameters present. In order to connect to the cameras and 
 
 # Sources for feature detection and matching
 https://www.youtube.com/watch?v=2GJuEIh4xGo<br>
-https://github.com/FoamoftheSea/KITTI_visual_odometry
+https://github.com/FoamoftheSea/KITTI_visual_odometry<br>
+https://scialert.net/fulltext/?doi=itj.2009.250.262<br>
