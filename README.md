@@ -9,7 +9,7 @@ Repo to produce stereo depth map, do mapping and navigation
 * [Point cloud visualization](#point-cloud-visualization)<br>
 * [Calibration and block matching links](#sources-for-camera-calibration-and-depth-map-generation)<br>
 * [Feature detection tab](#feature-detection-tab)<br>
-* [Feature detection links](#sources-for-camera-calibration-and-depth-map-generation)<br>
+* [Feature detection links](#sources-for-feature-detection-and-matching)<br>
 
 # Intro
 This repo is heavily under development.
