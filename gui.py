@@ -59,19 +59,26 @@ class MainWindow(QMainWindow):
         mainLayout = QGridLayout()
         self._createMenu()
 
+        # Create tabs
+        tabwidget = QTabWidget()
         calibratorLayout = self._createCalibrationUI()
         self.calibratorLayoutWidget = CalibWidget()
         self.calibratorLayoutWidget.setLayout(calibratorLayout)
+        tabwidget.addTab(self.calibratorLayoutWidget, "Sensor calibration")
 
         bmConfiguratorLayout = self._createBlockMatchingConfiguratorUI()
         bmConfiguratorLayoutWidget = QWidget()
         bmConfiguratorLayoutWidget.setLayout(bmConfiguratorLayout)
-        tabwidget = QTabWidget()
-        tabwidget.addTab(self.calibratorLayoutWidget, "Sensor calibration")
         tabwidget.addTab(
             bmConfiguratorLayoutWidget, "Block Matching Configurator")
 
+        featureDetectorLayout = self._createFeatureDetectionUI()
+        featureDetectionLayoutWidget = QWidget()
+        featureDetectionLayoutWidget.setLayout(featureDetectorLayout)
+        tabwidget.addTab(featureDetectionLayoutWidget, "Feature detection")
+
         self._initUIElements()
+
         mainLayout.addWidget(tabwidget, 0, 0)
         mainWidget = QWidget()
         mainWidget.setLayout(mainLayout)
@@ -109,8 +116,10 @@ class MainWindow(QMainWindow):
             bm_mode=self.blockMatching.currentIndex(),
             bm_drawEpipolar=self.drawEpipolar.isChecked(),
             bm_resolution=self.resolutionBm.currentIndex(),
-            pc_fov=self.pointCloud.fov,
-            pc_samplingRatio=self.pointCloud.samplingRatio,
+            bm_leftCameraIndex=self.bmCameraIndexLeft.currentIndex(),
+            bm_rightCameraIndex=self.bmCameraIndexLeft.currentIndex(),
+            pc_fov=self.fov.value(),
+            pc_samplingRatio=self.samplingRatio.value(),
             cal_calib_image_index=self.calib_image_index.value(),
             cal_rms_limit=self.rms_limit.value(),
             cal_advanced=self.advanced.isChecked(),
@@ -119,7 +128,11 @@ class MainWindow(QMainWindow):
                                         .isChecked(),
             cal_rms_increment=self.increment.value(),
             cal_max_rms=self.max_rms.value(),
-            cal_resolution=self.resolutionCal.currentIndex())
+            cal_resolution=self.resolutionCal.currentIndex(),
+            cal_leftCameraIndex=self.calibCameraIndexLeft.currentIndex(),
+            cal_rightCameraIndex=self.calibCameraIndexRight.currentIndex(),
+            feat_featureDetector=self.featureDetector.currentIndex(),
+            feat_featureMatcher=self.featureMatcher.currentIndex(),)
 
         settingsPath = Path(settingsName).with_suffix('')
         settingsPath = settingsPath.stem
@@ -192,8 +205,10 @@ class MainWindow(QMainWindow):
         self.drawEpipolar.setChecked(bool(settings["bm_drawEpipolar"]))
         self.smallerBlockSize.setValue(settings["bm_smallerBlockSize"])
         self.resolutionBm.setCurrentIndex(settings["bm_resolution"])
-        self.pointCloud.setFov(settings["pc_fov"])
-        self.pointCloud.setSamplingRatio(settings["pc_samplingRatio"])
+        self.bmCameraIndexLeft.setCurrentIndex(settings["bm_leftCameraIndex"])
+        self.bmCameraIndexRight.setCurrentIndex(settings["bm_rightCameraIndex"])
+        self.fov.setValue(settings["pc_fov"])
+        self.samplingRatio.setValue(settings["pc_samplingRatio"])
         self.calib_image_index.setValue(settings["cal_calib_image_index"])
         self.rms_limit.setValue(settings["cal_rms_limit"])
         self.advanced.setChecked(bool(settings["cal_advanced"]))
@@ -202,6 +217,10 @@ class MainWindow(QMainWindow):
         self.increment.setValue(settings["cal_rms_increment"])
         self.max_rms.setValue(settings["cal_max_rms"])
         self.resolutionCal.setCurrentIndex(settings["cal_resolution"])
+        self.calibCameraIndexLeft.setCurrentIndex(settings["cal_leftCameraIndex"])
+        self.calibCameraIndexRight.setCurrentIndex(settings["cal_rightCameraIndex"])
+        self.featureDetector.setCurrentIndex(settings["feat_featureDetector"])
+        self.featureMatcher.setCurrentIndex(settings["feat_featureMatcher"])
 
         settingsPath = Path(settingsName).with_suffix('')
         settingsPath = settingsPath.stem
@@ -457,9 +476,6 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.samplingRatio.setSingleStep(50)
         self.samplingRatio.valueChanged.connect(
             self.pointCloud.setSamplingRatio)
-        self.pointCloud.fovUpdated.connect(self.fov.setValue)
-        self.pointCloud.samplingRatioUpdated.connect(
-            self.samplingRatio.setValue)
 
         cameraLayout = QGridLayout()
         displayGroupBox = QGroupBox("Visualisation")
@@ -528,8 +544,51 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         layout.addWidget(buttonLayoutWidget, 4, 0, 1, 8)
         return layout
 
+    ## @brief Creates the feature detection UI.
+    def _createFeatureDetectionUI(self):
+        layout = QGridLayout()
+        self.videoFeat = QLabel()
+
+        messageTitle = QLabel("Logging:")
+        messageLabel = QLabel()
+        self.worker.signals.updateFeatureInfo.connect(messageLabel.setText)
+        messageLayout = QVBoxLayout()
+        messageLayout.addWidget(messageTitle)
+        messageLayout.addWidget(messageLabel)
+        messageLayoutWidget = QWidget()
+        messageLayoutWidget.setLayout(messageLayout)
+
+        featureDetectorLabel = QLabel("Feature detector")
+        self.featureDetector = QComboBox()
+        self.featureDetector.addItems(["sift", "orb", "surf"])
+        self.featureDetector.currentTextChanged.connect(self.worker.updateFeatureDetector)
+        featureMatcherLabel = QLabel("Feature matcher")
+        self.featureMatcher = QComboBox()
+        self.featureMatcher.addItems(["BF", "FLANN"])
+        self.featureMatcher.currentTextChanged.connect(self.worker.updateFeatureMatcher)
+        controlLayout = QGridLayout()
+        controlLayout.addWidget(featureDetectorLabel, 0, 2, 1, 1)
+        controlLayout.addWidget(self.featureDetector, 0, 3, 1, 1)
+        controlLayout.addWidget(featureMatcherLabel, 0, 4, 1, 1)
+        controlLayout.addWidget(self.featureMatcher, 0, 5, 1, 1)
+        controlLayoutWidget = QWidget()
+        controlLayoutWidget.setLayout(controlLayout)
+
+        start = QPushButton("Start")
+        start.clicked.connect(self._startFeatureDetection)
+        buttonLayout = QHBoxLayout()
+        buttonLayout.addWidget(start)
+        buttonLayoutWidget = QWidget()
+        buttonLayoutWidget.setLayout(buttonLayout)
+
+        layout.addWidget(self.videoFeat, 0, 0, 3, 1)
+        layout.addWidget(messageLayoutWidget, 3, 0, 1, 1)
+        layout.addWidget(controlLayoutWidget, 4, 0, 1, 1)
+        layout.addWidget(buttonLayoutWidget, 5, 0, 1, 1)
+        return layout
+
     # Updates the video stream labels.
-    def updateVideo(self, v0, v1, v_depth_color, v_depth_gray):
+    def updateVideo(self, v0, v1, v_depth_color, v_depth_gray, v_feature):
         if self.worker.mode == Modes.Calibration:
             self.process.show()
             self.takeImage.show()
@@ -543,6 +602,8 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             self.video_disp.setPixmap(v_depth_color)
             self.pointCloud.calculatePointcloud(v_depth_gray)
             self.pointCloud.updateGL()
+        elif self.worker.mode == Modes.FeatureDetection:
+            self.videoFeat.setPixmap(v_feature)
 
     # Shows/hides the appropriate controls for SGBM and BM.
     def updateBmType(self, index):
@@ -622,14 +683,10 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.speckleWindowSize.valueChanged.connect(
             self.worker.updateSpeckleWindowSize)
         self.speckleRange.valueChanged.connect(self.worker.updateSpeckleRange)
-        self.disp12MaxDiff.valueChanged.connect(
-              self.worker.updateDisp12MaxDiff)
-        self.smallerBlockSize.valueChanged.connect(
-              self.worker.updateSmallerBlockSize)
-        self.preFilterType.valueChanged.connect(
-              self.worker.updatePreFilterType)
-        self.preFilterSize.valueChanged.connect(
-              self.worker.updatePrefilterSize)
+        self.disp12MaxDiff.valueChanged.connect(self.worker.updateDisp12MaxDiff)
+        self.smallerBlockSize.valueChanged.connect(self.worker.updateSmallerBlockSize)
+        self.preFilterType.valueChanged.connect(self.worker.updatePreFilterType)
+        self.preFilterSize.valueChanged.connect(self.worker.updatePrefilterSize)
         self.preFilterCap.valueChanged.connect(self.worker.updatePrefilterCap)
         self.P1.valueChanged.connect(self.worker.updateP1)
         self.P2.valueChanged.connect(self.worker.updateP2)
@@ -698,13 +755,14 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.worker.state = States.Idle
         self.worker.mode = Modes.Calibration
 
-    # Start the thread with block matching.
-    # if the thread is already running, it will not restart it
+    # @brief  Start the thread with block matching.
+    #
+    # If the thread is already running, it will not restart it
     # just set to block matching mode, if it wasn't yet.
     def _startBMConfiguration(self):
         print("Starting block matching...")
         if self.worker.mode == Modes.BlockMatching:
-            print("Block Mathcing is already running...")
+            print("Block Matching is already running...")
             return
 
         # Execute
@@ -715,6 +773,25 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             self.workerThread.start()
         self.worker.state = States.Idle
         self.worker.mode = Modes.BlockMatching
+
+    ## @brieft Start the thread with feature detection.
+    #
+    # If the thread is already running, it will not restart it
+    # just set to block matching mode, if it wasn't yet.
+    def _startFeatureDetection(self):
+        print("Starting feature detection...")
+        if self.worker.mode == Modes.FeatureDetection:
+            print("Feature detection is already running...")
+            return
+
+        # Execute
+        if self.worker.mode == Modes.NoMode:
+            self.worker.moveToThread(self.workerThread)
+            self.workerThread.finished.connect(self.worker.deleteLater)
+            self.workerThread.started.connect(self.worker.run)
+            self.workerThread.start()
+        self.worker.state = States.Idle
+        self.worker.mode = Modes.FeatureDetection
 
     # Terminate UI and the threads appropriately.
     def sigint_handler(self):

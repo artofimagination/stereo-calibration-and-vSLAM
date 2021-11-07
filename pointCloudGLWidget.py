@@ -19,8 +19,6 @@ DELAY_FOR_100FPS = 0.01
 # The credit is for this repo
 # https://github.com/SoonminHwang/py-pointcloud-viewer
 class PointCloudGLWidget(GLWidget):
-    samplingRatioUpdated = QtCore.pyqtSignal(int)
-    fovUpdated = QtCore.pyqtSignal(int)
 
     def __init__(self):
         super(PointCloudGLWidget, self).__init__()
@@ -52,13 +50,11 @@ class PointCloudGLWidget(GLWidget):
     def setSamplingRatio(self, value):
         if self.samplingRatio != value:
             self.samplingRatio = value
-            self.samplingRatioUpdated.emit(self.samplingRatio)
 
     # Sets the field of view.
     def setFov(self, value):
         if self.fov != value:
             self.fov = value
-            self.fovUpdated.emit(self.fov)
 
     def paintGL(self):
         GLWidget.paintGL(self)

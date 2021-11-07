@@ -158,7 +158,7 @@ Please run calibration first: {e}")
         cv2.destroyAllWindows()
 
     # Generates depth map using block matching, or semi global block matching.
-    def createDepthMap(self, calibration):
+    def createDepthMap(self, calibration, leftFrame, rightFrame):
         imageSize = tuple(calibration["imageSize"])
         leftMapX = calibration["leftMapX"]
         leftMapY = calibration["leftMapY"]
@@ -192,7 +192,6 @@ Please run calibration first: {e}")
         stereoMatcher.setDisp12MaxDiff(self.disp12MaxDiff)
         stereoMatcher.setUniquenessRatio(self.uniquenessRatio)
 
-        (leftFrame, rightFrame) = self.captureFrame()
         leftHeight, leftWidth = leftFrame.shape[:2]
         rightHeight, rightWidth = rightFrame.shape[:2]
         if (leftWidth, leftHeight) != imageSize:

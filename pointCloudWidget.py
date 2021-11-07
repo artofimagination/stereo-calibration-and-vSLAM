@@ -15,8 +15,6 @@ import numpy as np
 # Initial example:
 # https://gist.github.com/markjay4k/da2f55e28514be7160a7c5fbf95bd243
 class PointCloudWidget(QWidget):
-    fovUpdated = QtCore.pyqtSignal(int)
-    samplingRatioUpdated = QtCore.pyqtSignal(int)
 
     def __init__(self):
         super(PointCloudWidget, self).__init__()
@@ -45,7 +43,6 @@ class PointCloudWidget(QWidget):
     def setFov(self, value):
         if self.fov != value:
             self.fov = value
-            self.fovUpdated.emit(self.fov)
 
     # Sets resolution. This changes the scatterplot item counts,
     # so the items have to be regenerated.
@@ -79,7 +76,6 @@ class PointCloudWidget(QWidget):
                 self.resolution[0] *
                 self.resolution[1] / self.samplingRatio) + 1
             self._recreateScatterPlot(count)
-            self.samplingRatioUpdated.emit(self.samplingRatio)
 
     # Calculates the 3D point cloud from depth map frame.
     def calculatePointcloud(self, depth):
