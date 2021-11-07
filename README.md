@@ -143,3 +143,20 @@ https://becominghuman.ai/stereo-3d-reconstruction-with-opencv-using-an-iphone-ca
 https://github.com/OmarPadierna/3DReconstruction<br>
 https://learnopencv.com/depth-perception-using-stereo-camera-python-c/<br>
 https://gist.github.com/aarmea/629e59ac7b640a60340145809b1c9013#file-2-calibrate-py<br>
+
+# Feature detection tab
+In order to get visual odometry working, features have to be detected and matched on two consecutive images. This allows to calculate navigation data based on only a few points of the images instead of every single point.<br>
+Again not an expert here. I copy pasted and adapted most of the cde [from here](https://github.com/FoamoftheSea/KITTI_visual_odometry). Note: This repo is a great tutorial for overall stereo calibration and vSLAM.<br>
+The tab shows the matches of two images captured by the same lense at different time.
+
+![feature detection](https://github.com/artofimagination/stereo-vSLAM/blob/master/resources/ReadmeImg3.png)
+
+# UI use
+There are only a few parameters present. In order to connect to the cameras and produce the matching, press **Start**
+ * **Parameters**
+     - _Feature detector_ - allows the user to change the detector algorithm between sift, orb and surf. Note surf is not supported with BF matcher in this app. It will terminate with an exception.
+     - _Feature matcher_ - allows the user to change the detector matching algorithm ("BF" Brute force and FLANN)
+
+# Sources for feature detection and matching
+https://www.youtube.com/watch?v=2GJuEIh4xGo
+https://github.com/FoamoftheSea/KITTI_visual_odometry
