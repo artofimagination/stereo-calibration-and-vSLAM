@@ -166,6 +166,7 @@ https://github.com/FoamoftheSea/KITTI_visual_odometry<br>
 https://scialert.net/fulltext/?doi=itj.2009.250.262<br>
 
 # Motion estimation tab
+![estimation](https://github.com/artofimagination/stereo-vSLAM/blob/master/resources/ReadmeImg4.png)
 
 # Sources for motion estimation
 https://github.com/FoamoftheSea/KITTI_visual_odometry<br>
