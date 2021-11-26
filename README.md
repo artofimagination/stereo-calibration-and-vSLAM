@@ -10,6 +10,7 @@ Repo to produce stereo depth map, do mapping and navigation
 * [Calibration and block matching links](#sources-for-camera-calibration-and-depth-map-generation)<br>
 * [Feature detection tab](#feature-detection-tab)<br>
 * [Feature detection links](#sources-for-feature-detection-and-matching)<br>
+* [Motion estimation tab](#motion-estimation-tab)<br>
 
 # Intro
 This repo is heavily under development.
@@ -163,3 +164,8 @@ There are only a few parameters present. In order to connect to the cameras and 
 https://www.youtube.com/watch?v=2GJuEIh4xGo<br>
 https://github.com/FoamoftheSea/KITTI_visual_odometry<br>
 https://scialert.net/fulltext/?doi=itj.2009.250.262<br>
+
+# Motion estimation tab
+
+# Sources for motion estimation
+https://github.com/FoamoftheSea/KITTI_visual_odometry<br>
