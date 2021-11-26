@@ -9,29 +9,33 @@ import OpenGL.arrays.vbo as glvbo
 import numpy as np
 
 
-BACKGROUND_BLACK = True
-
-DELAY_FOR_25FPS = 0.04
-DELAY_FOR_100FPS = 0.01
-
-
-# Visualizes point cloud. Much faster than using pyqtgraphs
-# The credit is for this repo
+## @class PointCloudGLWidget
+# Visualizes point cloud and trajectory as a series of points.
+#
+# Much faster than using pyqtgraphs
+# The credit is to this repo
 # https://github.com/SoonminHwang/py-pointcloud-viewer
 class PointCloudGLWidget(GLWidget):
 
     def __init__(self):
         super(PointCloudGLWidget, self).__init__()
 
+        # rendering related members
         self.disp_count = 0
         self.vbo_disp = None
         self.vbo_disp_clr = None
-        self.pointCloud = None
+        self.trajectory_count = 0
+        self.vbo_trajectory = None
+        self.vbo_trajectory_clr = None
 
-        self.fov = 50
         # Which elements to keep and display in the array
         # For instance 100 will only take every 100th point.
         self.samplingRatio = 1
+        # Any point that represents a depth greater this limit will be ignored.
+        self.ignoreDepthLimit = 500
+        # Field of view
+        self.fov = 50
+
         self.setDefaultModelViewMatrix()
 
     def keyPressEvent(self, event):
@@ -56,13 +60,17 @@ class PointCloudGLWidget(GLWidget):
         if self.fov != value:
             self.fov = value
 
+    # Sets the field of view.
+    def setIgnoreDepthLimit(self, value):
+        if self.ignoreDepthLimit != value:
+            self.ignoreDepthLimit = value
+
     def paintGL(self):
         GLWidget.paintGL(self)
+        glPushMatrix()
+        glEnableClientState(GL_VERTEX_ARRAY)
+        glEnableClientState(GL_COLOR_ARRAY)
         if self.disp_count > 0:
-            glPushMatrix()
-            glEnableClientState(GL_VERTEX_ARRAY)
-            glEnableClientState(GL_COLOR_ARRAY)
-
             vbo_disp = self.vbo_disp
             vbo_disp_clr = self.vbo_disp_clr
             disp_count = self.disp_count
@@ -72,23 +80,40 @@ class PointCloudGLWidget(GLWidget):
             vbo_disp.unbind()
 
             vbo_disp_clr.bind()
-            glColorPointer(3,  GL_UNSIGNED_BYTE, 0, vbo_disp_clr)
+            glColorPointer(3, GL_UNSIGNED_BYTE, 0, vbo_disp_clr)
             vbo_disp_clr.unbind()
 
             glDrawArrays(GL_POINTS, 0, disp_count)
 
-            glDisableClientState(GL_VERTEX_ARRAY)
-            glDisableClientState(GL_COLOR_ARRAY)
+        if self.trajectory_count > 0:
+            vbo_trajectory = self.vbo_trajectory
+            vbo_trajectory_clr = self.vbo_trajectory_clr
+            trajectory_count = self.trajectory_count
 
-            glPopMatrix()
+            vbo_trajectory.bind()
+            glVertexPointer(3, GL_FLOAT, 0, vbo_trajectory)
+            vbo_trajectory.unbind()
 
-    def calculatePointcloud(self, depth):
+            vbo_trajectory_clr.bind()
+            glColorPointer(3, GL_UNSIGNED_BYTE, 0, vbo_trajectory_clr)
+            vbo_trajectory_clr.unbind()
+
+            glDrawArrays(GL_POINTS, 0, trajectory_count)
+
+        glDisableClientState(GL_VERTEX_ARRAY)
+        glDisableClientState(GL_COLOR_ARRAY)
+        glPopMatrix()
+
+    # Sets the map VBO.
+    def setMapVBO(self, depth):
+        if depth is None:
+            return
         height = depth.shape[0]
         width = depth.shape[1]
         fy = 0.5 / np.tan(self.fov * 0.5)
         aspectRatio = width / height
         fx = fy / aspectRatio
-        mask = np.where(depth > 0)
+        mask = np.where((depth > 0.1) & (depth < self.ignoreDepthLimit))
         x = mask[1]
         y = mask[0]
 
@@ -99,28 +124,32 @@ class PointCloudGLWidget(GLWidget):
         world_x = normalized_x * 255 / fx
         world_y = normalized_y * 255 / fy
         world_z = depth[y, x]
-        pointCloud = np.vstack((-world_x, world_y, world_z)).T
-        self.pointCloud = pointCloud[0::self.samplingRatio, :]
+        pointCloud = np.vstack((-world_x, world_y, -world_z)).T
+        pointCloud = pointCloud[0::self.samplingRatio, :]
 
-        if self.pointCloud is not None:
-            self.disp_count = len(self.pointCloud)
+        if pointCloud is not None:
+            self.disp_count = len(pointCloud)
             indices = np.arange(self.disp_count)
             redIndices = np.full(self.disp_count, 0)
             greenIndices = np.full(self.disp_count, 1)
             depthIndices = np.full(self.disp_count, 2)
 
             colors = np.zeros((self.disp_count, 3), dtype=np.uint8)
-            colors[indices, redIndices] = self.pointCloud[indices, depthIndices]
+            colors[indices, redIndices] = pointCloud[indices, depthIndices]
             colors[indices, greenIndices] =\
-                (255 - self.pointCloud[indices, depthIndices])
-            self.vbo_disp = glvbo.VBO(self.pointCloud / 10.0)
+                (255 - pointCloud[indices, depthIndices])
+            self.vbo_disp = glvbo.VBO(pointCloud.astype(np.float32) / 10.0)
             self.vbo_disp_clr = glvbo.VBO(colors)
 
-    def initializeGL(self):
-        if BACKGROUND_BLACK:
-            glClearColor(0.0, 0.0, 0.0, 0.0)
-        else:
-            glClearColor(1.0, 1.0, 1.0, 1.0)
+    # Sets the trajectory VBO.
+    def setTrajectoryVBO(self, trajectory):
+        if trajectory is not None:
+            self.trajectory_count = len(trajectory)
+            colors = np.full([self.trajectory_count, 3], [255, 255, 255], dtype=np.uint8)
+            self.vbo_trajectory = glvbo.VBO((trajectory[:, :, 3][:, ]).astype(np.float32))
+            self.vbo_trajectory_clr = glvbo.VBO(colors)
 
+    def initializeGL(self):
+        glClearColor(0.0, 0.0, 0.0, 0.0)
         glEnable(GL_DEPTH_TEST)
         self.reset_view()

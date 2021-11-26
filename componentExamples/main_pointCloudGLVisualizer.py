@@ -23,7 +23,7 @@ if __name__ == "__main__":
     # Loading example depth map
     depthMapFile = np.load("testDepthMap.npz", allow_pickle=False)
     depthMap = depthMapFile["depthMap"]
-    pointCloudWidget.calculatePointcloud(depthMap)
+    pointCloudWidget.setMapVBO(depthMap)
 
     mainWidget = QWidget()
     mainWidget.setLayout(mainLayout)

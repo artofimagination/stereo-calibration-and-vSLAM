@@ -12,6 +12,7 @@ from PyQt5.QtCore import QObject
 CALIBRATION_RESULT = "output/calibration.npz"
 
 
+# @class SensorCalibrator
 # Generates calibration images and data
 # Calibrates the cameras and stores the result for future use.
 class SensorCalibrator(QObject):
@@ -110,9 +111,8 @@ class SensorCalibrator(QObject):
             newSize = grayImage.shape[::-1]
             if imageSize is not None and newSize != imageSize:
                 raise ValueError(
-                        "Calibration image at {0} \
-is not the same size as the others"
-                        .format(imagePath))
+                    "Calibration image at {0} \
+is not the same size as the others".format(imagePath))
             imageSize = newSize
 
             hasCorners, corners = cv2.findChessboardCorners(
@@ -215,11 +215,11 @@ corners on any of the sensors...")
 
     # Returns the matching object and image points.
     def _getMatchingObjectAndImagePoints(
-          self,
-          requestedFilenames,
-          allFilenames,
-          objectPoints,
-          imagePoints):
+            self,
+            requestedFilenames,
+            allFilenames,
+            objectPoints,
+            imagePoints):
         requestedFilenameSet = set(requestedFilenames)
         requestedObjectPoints = []
         requestedImagePoints = []
@@ -272,14 +272,14 @@ Throwing away current chessboard image pair..."
 
     # Rectifies, undistorts the calibration data and stores in npz.
     def finalizingCalibration(
-          self,
-          leftCameraMatrix,
-          leftDistortionCoefficients,
-          rightCameraMatrix,
-          rightDistortionCoefficients,
-          imageSize,
-          rotationMatrix,
-          translationVector):
+            self,
+            leftCameraMatrix,
+            leftDistortionCoefficients,
+            rightCameraMatrix,
+            rightDistortionCoefficients,
+            imageSize,
+            rotationMatrix,
+            translationVector):
         print("Rectifying cameras...")
         # TODO: Why do I care about the disparityToDepthMap?
         (leftRectification,
@@ -289,29 +289,30 @@ Throwing away current chessboard image pair..."
          dispartityToDepthMap,
          leftROI,
          rightROI) = cv2.stereoRectify(
-                        leftCameraMatrix, leftDistortionCoefficients,
-                        rightCameraMatrix, rightDistortionCoefficients,
-                        imageSize,
-                        rotationMatrix, translationVector,
-                        None, None, None, None, None,
-                        cv2.CALIB_ZERO_DISPARITY,
-                        self.OPTIMIZE_ALPHA)
+            leftCameraMatrix,
+            leftDistortionCoefficients,
+            rightCameraMatrix, rightDistortionCoefficients,
+            imageSize,
+            rotationMatrix, translationVector,
+            None, None, None, None, None,
+            cv2.CALIB_ZERO_DISPARITY,
+            self.OPTIMIZE_ALPHA)
 
         print("Saving calibration...")
         leftMapX, leftMapY = cv2.initUndistortRectifyMap(
-                leftCameraMatrix,
-                leftDistortionCoefficients,
-                leftRectification,
-                leftProjection,
-                imageSize,
-                cv2.CV_32FC1)
+            leftCameraMatrix,
+            leftDistortionCoefficients,
+            leftRectification,
+            leftProjection,
+            imageSize,
+            cv2.CV_32FC1)
         rightMapX, rightMapY = cv2.initUndistortRectifyMap(
-                rightCameraMatrix,
-                rightDistortionCoefficients,
-                rightRectification,
-                rightProjection,
-                imageSize,
-                cv2.CV_32FC1)
+            rightCameraMatrix,
+            rightDistortionCoefficients,
+            rightRectification,
+            rightProjection,
+            imageSize,
+            cv2.CV_32FC1)
 
         np.savez_compressed(
             CALIBRATION_RESULT,
@@ -321,7 +322,10 @@ Throwing away current chessboard image pair..."
             leftROI=leftROI,
             rightMapX=rightMapX,
             rightMapY=rightMapY,
-            rightROI=rightROI)
+            rightROI=rightROI,
+            leftCameraMatrix=leftCameraMatrix,
+            leftProjection=leftProjection,
+            rightProjection=rightProjection)
 
     # Calibrates the left, then right camera, then does a stereo calibration.
     def calibrateSensor(self):
@@ -355,10 +359,10 @@ Throwing away current chessboard image pair..."
 
         leftObjectPoints, leftImagePoints =\
             self._getMatchingObjectAndImagePoints(
-              filenames,
-              leftFilenames,
-              leftObjectPoints,
-              leftImagePoints)
+                filenames,
+                leftFilenames,
+                leftObjectPoints,
+                leftImagePoints)
         rightObjectPoints, rightImagePoints =\
             self._getMatchingObjectAndImagePoints(
                 filenames,
@@ -386,7 +390,7 @@ Throwing away current chessboard image pair..."
                 None)
 
         print("Calibrating cameras together...")
-        (rms, _, _, _, _, rotationMatrix, translationVector, _, _) =\
+        (rms, leftCameraMatrix, _, _, _, rotationMatrix, translationVector, _, _) =\
             cv2.stereoCalibrate(
                 objectPoints,
                 leftImagePoints,
@@ -404,10 +408,10 @@ Throwing away current chessboard image pair..."
                 self.TERMINATION_CRITERIA)
 
         return (rms, (
-          leftCameraMatrix,
-          leftDistortionCoefficients,
-          rightCameraMatrix,
-          rightDistortionCoefficients,
-          imageSize,
-          rotationMatrix,
-          translationVector))
+            leftCameraMatrix,
+            leftDistortionCoefficients,
+            rightCameraMatrix,
+            rightDistortionCoefficients,
+            imageSize,
+            rotationMatrix,
+            translationVector))

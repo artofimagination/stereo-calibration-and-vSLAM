@@ -3,6 +3,38 @@ import numpy as np
 from calibration import CALIBRATION_RESULT
 
 
+def decompose_projection_matrix(p):
+    '''
+    Shortcut to use cv2.decomposeProjectionMatrix(),
+    which only returns k, r, t, and divides
+    t by the scale, then returns it as a vector with shape (3,) (non-homogeneous)
+
+    Arguments:
+    p -- projection matrix to be decomposed
+
+    Returns:
+    k, r, t -- intrinsic matrix, rotation matrix, and 3D translation vector
+
+    '''
+    k, r, t, _, _, _, _ = cv2.decomposeProjectionMatrix(p)
+    t = (t / t[3])[:3]
+
+    return k, r, t
+
+
+def generateDepthMapMask(depthImage, leftImage):
+    firstNonMaxIndex = 0
+    for i, pixel in enumerate(depthImage[4]):
+        if pixel < depthImage.max():
+            firstNonMaxIndex = i
+            break
+    mask = np.zeros(depthImage.shape[:2], dtype=np.uint8)
+    ymax = depthImage.shape[0]
+    xmax = depthImage.shape[1]
+    cv2.rectangle(mask, (firstNonMaxIndex, 0), (xmax, ymax), (255), thickness=-1)
+    return mask
+
+
 # Draws the specified lines on the input images.
 def drawLines(img1, img2, lines, pts1, pts2):
     ''' img1 - image on which we draw the epilines for the points in img2
@@ -42,8 +74,6 @@ class Sensor():
         self.preFilterType = 0
         self.smallerBlockSize = 0
         self.textureThreshold = 0
-        self.P1 = 0
-        self.P2 = 0
         self.drawEpipolar = False
         self.camera_width = 640
         self.camera_height = 480
@@ -157,14 +187,29 @@ Please run calibration first: {e}")
         self.releaseVideoDevices()
         cv2.destroyAllWindows()
 
-    # Generates depth map using block matching, or semi global block matching.
-    def createDepthMap(self, calibration, leftFrame, rightFrame):
-        imageSize = tuple(calibration["imageSize"])
+    # Undistorts the camera images, using the calibration data.
+    def undistort(self, calibration, leftFrame, rightFrame):
         leftMapX = calibration["leftMapX"]
         leftMapY = calibration["leftMapY"]
-        leftROI = tuple(calibration["leftROI"])
         rightMapX = calibration["rightMapX"]
         rightMapY = calibration["rightMapY"]
+        fixedLeft = cv2.remap(
+            leftFrame,
+            leftMapX,
+            leftMapY,
+            self.REMAP_INTERPOLATION)
+        fixedRight = cv2.remap(
+            rightFrame,
+            rightMapX,
+            rightMapY,
+            self.REMAP_INTERPOLATION)
+        return fixedLeft, fixedRight
+
+    # Generates depth map using block matching, or semi global block matching.
+    # TODO move block matching in its own class for clarity.
+    def createDepthMap(self, calibration, leftFrame, rightFrame):
+        imageSize = tuple(calibration["imageSize"])
+        leftROI = tuple(calibration["leftROI"])
         rightROI = tuple(calibration["rightROI"])
 
         # TODO: Why these values in particular?
@@ -181,8 +226,9 @@ Please run calibration first: {e}")
             stereoMatcher.setTextureThreshold(self.textureThreshold)
         else:
             stereoMatcher = cv2.StereoSGBM_create()
-            stereoMatcher.setP1(self.P1)
-            stereoMatcher.setP2(self.P2)
+            stereoMatcher.setP1(8 * 1 * self.blockSize ** 2)
+            stereoMatcher.setP2(32 * 1 * self.blockSize ** 2)
+            stereoMatcher.setMode(cv2.STEREO_SGBM_MODE_SGBM_3WAY)
         stereoMatcher.setMinDisparity(self.min_disp)
         stereoMatcher.setNumDisparities(self.num_disp)
         stereoMatcher.setBlockSize(self.blockSize)
@@ -202,65 +248,34 @@ Please run calibration first: {e}")
             print("Right camera has different size than the calibration data")
             return (leftFrame, rightFrame, None)
 
-        fixedLeft = cv2.remap(
-            leftFrame,
-            leftMapX,
-            leftMapY,
-            self.REMAP_INTERPOLATION)
-        fixedRight = cv2.remap(
-            rightFrame,
-            rightMapX,
-            rightMapY,
-            self.REMAP_INTERPOLATION)
+        (leftFrame, rightFrame) = self.undistort(calibration, leftFrame, rightFrame)
 
         if self.drawEpipolar is True:
             (leftFrame, rightFrame) = self.calculateEpipolarLine(
-                fixedLeft, fixedRight)
+                leftFrame, rightFrame)
 
-        grayLeft = cv2.cvtColor(fixedLeft, cv2.COLOR_BGR2GRAY)
-        grayRight = cv2.cvtColor(fixedRight, cv2.COLOR_BGR2GRAY)
-
-        # Optionally add noise reduction before depth map calculation.
-        # grayLeft =\
-        #     cv2.fastNlMeansDenoising(
-        #         grayLeft,
-        #         dst=31,
-        #         h=7,
-        #         templateWindowSize=5,
-        #         searchWindowSize=21)
-
-        # grayRight =\
-        #     cv2.fastNlMeansDenoising(
-        #         grayRight,
-        #         dst=31,
-        #         h=7,
-        #         templateWindowSize=5,
-        #         searchWindowSize=21)
-
-        # grayLeft =\
-        #     cv2.medianBlur(grayLeft, 11)
-        # grayRight =\
-        #     cv2.medianBlur(grayRight, 11)
+        grayLeft = cv2.cvtColor(leftFrame, cv2.COLOR_BGR2GRAY)
+        grayRight = cv2.cvtColor(rightFrame, cv2.COLOR_BGR2GRAY)
 
         depth = stereoMatcher.compute(grayLeft, grayRight)
-        # Optionally add noise reduction after the depth map calculation.
-        depth =\
-            cv2.medianBlur(depth, 5)
-        # depth =\
-        #     cv2.GaussianBlur(depth, (9, 9), 0)
+        # Adding some smoothing to increase image quality.
+        depth = cv2.medianBlur(depth, 5).astype(np.float32) / 16
+        k_left, _, t_left = decompose_projection_matrix(calibration["leftProjection"])
+        _, _, t_right = decompose_projection_matrix(calibration["rightProjection"])
+        f = k_left[0][0]
 
-        # Convert depth map to a format that can be accepted by the UI
-        normalized_depth = cv2.normalize(
-            depth,
-            depth,
-            0,
-            255,
-            norm_type=cv2.NORM_MINMAX)
-        normalized_depth_color = cv2.cvtColor(
-            normalized_depth.astype(np.uint8),
-            cv2.COLOR_GRAY2RGB)
+        # Calculate baseline of stereo pair
+        b = t_right[0] - t_left[0]
 
-        return leftFrame, rightFrame, normalized_depth_color, normalized_depth
+        # Avoid instability and division by zero
+        depth[depth == 0.0] = 0.1
+        depth[depth == -1.0] = 0.1
+
+        # Make empty depth map then fill with depth
+        depth_map = np.ones(depth.shape)
+        depth_map = f * b / depth
+
+        return leftFrame, rightFrame, depth_map
 
     # Calculates the epippolar lines for visualization purposes.
     def calculateEpipolarLine(self, leftFrame, rightFrame):
@@ -285,7 +300,7 @@ Please run calibration first: {e}")
 
         # ratio test as per Lowe's paper
         for i, (m, n) in enumerate(matches):
-            if m.distance < 0.8*n.distance:
+            if m.distance < 0.8 * n.distance:
                 good.append(m)
                 pts2.append(kp2[m.trainIdx].pt)
                 pts1.append(kp1[m.queryIdx].pt)

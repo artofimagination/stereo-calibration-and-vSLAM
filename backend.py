@@ -2,22 +2,32 @@ import traceback
 import sys
 from enum import Enum
 
-from sensor import Sensor
+from sensor import Sensor, generateDepthMapMask
 from calibration import SensorCalibrator
 from featureDetector import FeatureDetector
+from motionEstimator import MotionEstimator
 
 from PyQt5.QtCore import QObject, Qt
 from PyQt5 import QtCore
 from PyQt5.QtGui import QImage, QPixmap
 
 import cv2
+import numpy as np
 
 
 # Signals used by the backend.
 class BackendSignals(QtCore.QObject):
     finished = QtCore.pyqtSignal()
     error = QtCore.pyqtSignal(tuple)
-    framesSent = QtCore.pyqtSignal(object, object, object, object, object)
+    # sends live data to the gui
+    # parameters
+    # left camera image in QPixmap
+    # right camera image in QPixmap
+    # depth map image in QPixmap
+    # depth map point cloud
+    # feature matches image QPixmap
+    # trajectory of our movement
+    framesSent = QtCore.pyqtSignal(QPixmap, QPixmap, QPixmap, object, QPixmap, object)
     updateCalibInfo = QtCore.pyqtSignal(object, object)
     updateFeatureInfo = QtCore.pyqtSignal(object)
     rmsLimitUpdated = QtCore.pyqtSignal(float)
@@ -44,10 +54,12 @@ class Modes(Enum):
     NoMode = 0
     # Generating calibration data and images.
     Calibration = 1
-    # BlockMatching (generates depth map using block matching)
+    # Generates depth map using block matching
     BlockMatching = 2
-    # FeatureDetection (does feature extraction and matching)
+    # Does feature extraction and matching
     FeatureDetection = 3
+    # Estimates motion trajectory and orientation
+    MotionEstimation = 4
 
 
 ## @class Backend
@@ -58,6 +70,7 @@ class Modes(Enum):
 #   - Producing final calibration data
 #   - Depth map generation using block matching
 #   - Feature extraction and matching
+#   - Motion Estimation
 class Backend(QObject):
     def __init__(self):
         super(Backend, self).__init__()
@@ -81,6 +94,13 @@ class Backend(QObject):
         # Responsible to extract and match features from the images and depth map.
         self.featureDetector = FeatureDetector()
         self.featureDetector.infoStrUpdated.connect(self.signals.updateFeatureInfo)
+
+        # Responsible to generate trajectory and orientation
+        self.motionEstimator = MotionEstimator()
+        # This number represents which frame to process. For example if it is set to 5
+        # every 5th frame is being processed. This is to improve performance.
+        # Must be >= 1.
+        self.frameSkipCount = 1
 
         # Holds the current execution state
         self.state = States.Idle
@@ -125,12 +145,6 @@ class Backend(QObject):
 
     def updateDisp12MaxDiff(self, disp12MaxDiff):
         self.sensor.disp12MaxDiff = disp12MaxDiff
-
-    def updateP1(self, p1):
-        self.sensor.P1 = p1
-
-    def updateP2(self, p2):
-        self.sensor.P2 = p2
 
     def updateDrawEpipolar(self, draw):
         self.sensor.drawEpipolar = draw
@@ -206,6 +220,21 @@ class Backend(QObject):
     def updateFeatureMatcher(self, value):
         self.featureDetector.featureMatcher = value
 
+    def updateFrameSkipCount(self, value):
+        self.frameSkipCount = value
+
+    def updateInlierLimit(self, value):
+        self.motionEstimator.inliersLimit = value
+
+    def updateMaxDepth(self, value):
+        self.motionEstimator.maxDepth = value
+
+    def updateReprojectionError(self, value):
+        self.motionEstimator.reprojectionError = value
+
+    def updateMatchDistanceThreshold(self, value):
+        self.featureDetector.matchDistanceThreshold = value
+
     ###########################################
     # Slot implementation ends
     ###########################################
@@ -228,10 +257,14 @@ class Backend(QObject):
         depthPix = QPixmap()
         matchesPix = QPixmap()
         if depthMap is not None:
+            rgbDepth = cv2.cvtColor(
+                depthMap.astype(np.uint8),
+                cv2.COLOR_GRAY2RGB)
+
             img = QImage(
-                depthMap,
-                depthMap.shape[1],
-                depthMap.shape[0],
+                rgbDepth,
+                rgbDepth.shape[1],
+                rgbDepth.shape[0],
                 QImage.Format_RGB888)
             depthPix = QPixmap.fromImage(img)
             depthPix = depthPix.scaled(
@@ -292,22 +325,24 @@ class Backend(QObject):
     @QtCore.pyqtSlot()
     def run(self):
         try:
-            depth_color = None
-            depth_gray = None
+            depth_pointcloud = None
             leftFrame = None
             rightFrame = None
             image_matches = None
+            trajectory = None
             leftPix = QPixmap()
             rightPix = QPixmap()
             depthPix = QPixmap()
             matchesPix = QPixmap()
+            frameSkipCount = 0
+            calibrationFileLoaded = False
+
             self.sensor.startSensors()
             self.signals.cameraIndicesUpdated.emit(
                 self.sensor.leftIndex,
                 self.sensor.rightIndex,
                 self.sensor.sensor_indices)
-            calibrationFileLoaded = False
-            bmSkipCount = 0
+
             while(True):
                 if self.stop:
                     break
@@ -316,8 +351,6 @@ class Backend(QObject):
                     if self.state == States.Idle:
                         (leftFrame, rightFrame) =\
                             self.sensor.captureFrame()
-                        (leftPix, rightPix, depthPix, _) = self.updateVideoPixmap(
-                            leftFrame, rightFrame, None, None)
 
                     if self.state == States.UpdateSensorConfig:
                         self.sensor.restartSensors()
@@ -345,15 +378,13 @@ class Backend(QObject):
                             calibration = self.sensor.loadCalibFile()
                             calibrationFileLoaded = True
                         (leftFrame, rightFrame) = self.sensor.captureFrame()
-                        # Do block matching only in every xth cycle.
-                        if bmSkipCount == 5:
-                            (leftFrame, rightFrame, depth_color, depth_gray) =\
+                        # Do processing only in every xth cycle.
+                        if frameSkipCount == self.frameSkipCount:
+                            (leftFrame, rightFrame, depth_pointcloud) =\
                                 self.sensor.createDepthMap(
                                     calibration, leftFrame, rightFrame)
-                            bmSkipCount = 0
-                        (leftPix, rightPix, depthPix, _) = self.updateVideoPixmap(
-                            leftFrame, rightFrame, depth_color, None)
-                        bmSkipCount += 1
+                            frameSkipCount = 0
+                        frameSkipCount += 1
 
                     if self.state == States.UpdateSensorConfig:
                         self.sensor.restartSensors()
@@ -361,25 +392,46 @@ class Backend(QObject):
 
                 elif self.mode == Modes.FeatureDetection:
                     if self.state == States.Idle:
+                        (leftFrame, rightFrame) = self.sensor.captureFrame()
+                        self.featureDetector.set_frame(leftFrame)
+                        (_, _, _, image_matches) = self.featureDetector.detect_features(
+                            None)
+
+                elif self.mode == Modes.MotionEstimation:
+                    if self.state == States.Idle:
                         if calibrationFileLoaded is False:
                             calibration = self.sensor.loadCalibFile()
                             calibrationFileLoaded = True
                         (leftFrame, rightFrame) = self.sensor.captureFrame()
-                        self.featureDetector.set_frame(leftFrame)
-                        (_, _, _, image_matches) = self.featureDetector.detect_features()
-                        (leftPix, rightPix, depthPix, matchesPix) =\
-                            self.updateVideoPixmap(
-                            leftFrame,
-                            rightFrame,
-                            depth_color,
-                            image_matches)
+
+                        # Do processing only in every xth cycle.
+                        if frameSkipCount == 1:
+                            frameSkipCount = 0
+                            (leftFrame, rightFrame, depth_pointcloud) =\
+                                self.sensor.createDepthMap(
+                                    calibration, leftFrame, rightFrame)
+                            calibration["leftCameraMatrix"]
+                            self.featureDetector.set_frame(leftFrame)
+                            mask = generateDepthMapMask(depth_pointcloud, leftFrame)
+                            (kp0, kp1, matches, image_matches) =\
+                                self.featureDetector.detect_features(mask)
+                            if kp0 is not None and kp1 is not None:
+                                trajectory = self.motionEstimator.calculate_trajectory(
+                                    matches,
+                                    kp0,
+                                    kp1,
+                                    calibration["leftCameraMatrix"],
+                                    depth_pointcloud)
+                        frameSkipCount += 1
 
                     if self.state == States.UpdateSensorConfig:
                         self.sensor.restartSensors()
                         self.state = States.Idle
 
+                (leftPix, rightPix, depthPix, matchesPix) = self.updateVideoPixmap(
+                    leftFrame, rightFrame, depth_pointcloud, image_matches)
                 self.signals.framesSent.emit(
-                    leftPix, rightPix, depthPix, depth_gray, matchesPix)
+                    leftPix, rightPix, depthPix, depth_pointcloud, matchesPix, trajectory)
         except Exception:
             self.sensor.releaseVideoDevices()
             traceback.print_exc()

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from backend import Backend, States, Modes
 from pointCloudGLWidget import PointCloudGLWidget
+from linePlotWidget import LinePlotWidget
 
 from PyQt5 import QtCore
 from PyQt5.QtCore import QThread
@@ -77,6 +78,11 @@ class MainWindow(QMainWindow):
         featureDetectionLayoutWidget.setLayout(featureDetectorLayout)
         tabwidget.addTab(featureDetectionLayoutWidget, "Feature detection")
 
+        motionEstimationLayout = self._createMotionEstimationUI()
+        motionEstimationLayoutWidget = QWidget()
+        motionEstimationLayoutWidget.setLayout(motionEstimationLayout)
+        tabwidget.addTab(motionEstimationLayoutWidget, "Motion estimation")
+
         self._initUIElements()
 
         mainLayout.addWidget(tabwidget, 0, 0)
@@ -111,8 +117,6 @@ class MainWindow(QMainWindow):
             bm_preFilterSize=self.preFilterSize.value(),
             bm_preFilterCap=self.preFilterCap.value(),
             bm_smallerBlockSize=self.smallerBlockSize.value(),
-            bm_p1=self.P1.value(),
-            bm_p2=self.P2.value(),
             bm_mode=self.blockMatching.currentIndex(),
             bm_drawEpipolar=self.drawEpipolar.isChecked(),
             bm_resolution=self.resolutionBm.currentIndex(),
@@ -120,6 +124,7 @@ class MainWindow(QMainWindow):
             bm_rightCameraIndex=self.bmCameraIndexLeft.currentIndex(),
             pc_fov=self.fov.value(),
             pc_samplingRatio=self.samplingRatio.value(),
+            pc_ignoreRendererMaxDepth=self.rendererMaxDepth.value(),
             cal_calib_image_index=self.calib_image_index.value(),
             cal_rms_limit=self.rms_limit.value(),
             cal_advanced=self.advanced.isChecked(),
@@ -132,7 +137,11 @@ class MainWindow(QMainWindow):
             cal_leftCameraIndex=self.calibCameraIndexLeft.currentIndex(),
             cal_rightCameraIndex=self.calibCameraIndexRight.currentIndex(),
             feat_featureDetector=self.featureDetector.currentIndex(),
-            feat_featureMatcher=self.featureMatcher.currentIndex(),)
+            feat_featureMatcher=self.featureMatcher.currentIndex(),
+            feat_maxDistance=self.maxDistance.value(),
+            motion_inliers=self.inliers.value(),
+            motion_maxDepth=self.maxDepth.value(),
+            motion_reprojectionError=self.reprojectionError.value())
 
         settingsPath = Path(settingsName).with_suffix('')
         settingsPath = settingsPath.stem
@@ -199,8 +208,6 @@ class MainWindow(QMainWindow):
         self.preFilterType.setValue(settings["bm_preFilterType"])
         self.preFilterSize.setValue(settings["bm_preFilterSize"])
         self.preFilterCap.setValue(settings["bm_preFilterCap"])
-        self.P1.setValue(settings["bm_p1"])
-        self.P2.setValue(settings["bm_p2"])
         self.blockMatching.setCurrentIndex(settings["bm_mode"])
         self.drawEpipolar.setChecked(bool(settings["bm_drawEpipolar"]))
         self.smallerBlockSize.setValue(settings["bm_smallerBlockSize"])
@@ -209,6 +216,7 @@ class MainWindow(QMainWindow):
         self.bmCameraIndexRight.setCurrentIndex(settings["bm_rightCameraIndex"])
         self.fov.setValue(settings["pc_fov"])
         self.samplingRatio.setValue(settings["pc_samplingRatio"])
+        self.rendererMaxDepth.setValue(settings["pc_ignoreRendererMaxDepth"])
         self.calib_image_index.setValue(settings["cal_calib_image_index"])
         self.rms_limit.setValue(settings["cal_rms_limit"])
         self.advanced.setChecked(bool(settings["cal_advanced"]))
@@ -221,6 +229,10 @@ class MainWindow(QMainWindow):
         self.calibCameraIndexRight.setCurrentIndex(settings["cal_rightCameraIndex"])
         self.featureDetector.setCurrentIndex(settings["feat_featureDetector"])
         self.featureMatcher.setCurrentIndex(settings["feat_featureMatcher"])
+        self.maxDistance.setValue(settings["feat_maxDistance"])
+        self.inliers.setValue(settings["motion_inliers"])
+        self.maxDepth.setValue(settings["motion_maxDepth"])
+        self.reprojectionError.setValue(settings["motion_reprojectionError"])
 
         settingsPath = Path(settingsName).with_suffix('')
         settingsPath = settingsPath.stem
@@ -415,10 +427,6 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.speckleWindowSize = QSpinBox()
         self.speckleRange = QSpinBox()
         self.disp12MaxDiff = QSpinBox()
-        self.P1Label = QLabel("P1")
-        self.P1 = QSpinBox()
-        self.P2Label = QLabel("P2")
-        self.P2 = QSpinBox()
         self.preFilterSizeLabel = QLabel("preFilterSize")
         self.preFilterSize = QSpinBox()
         self.preFilterTypeLabel = QLabel("preFilterType")
@@ -450,8 +458,6 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.preFilterSize.setSingleStep(2)
         self.preFilterCap.setRange(1, 63)
         self.preFilterCap.setSingleStep(1)
-        self.P1.setRange(-1, 10000)
-        self.P2.setRange(-1, 10000)
 
         self.resolutionBm = QComboBox()
         self.resolutionBm.addItems(["480p", "720p"])
@@ -471,6 +477,10 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.fov.setRange(1, 360)
         self.fov.valueChanged.connect(
             self.pointCloud.setFov)
+        self.rendererMaxDepth = QSpinBox()
+        self.rendererMaxDepth.setRange(1, 5000)
+        self.rendererMaxDepth.valueChanged.connect(
+            self.pointCloud.setIgnoreDepthLimit)
         self.samplingRatio = QSpinBox()
         self.samplingRatio.setRange(1, 10000)
         self.samplingRatio.setSingleStep(50)
@@ -486,6 +496,8 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         pointCloudLayout.addWidget(self.fov, 0, 5, 1, 1)
         pointCloudLayout.addWidget(QLabel("Sampling ratio"), 1, 4, 1, 1)
         pointCloudLayout.addWidget(self.samplingRatio, 1, 5, 1, 1)
+        pointCloudLayout.addWidget(QLabel("Ignore depth"), 2, 4, 1, 1)
+        pointCloudLayout.addWidget(self.rendererMaxDepth, 2, 5, 1, 1)
         pointCloudControl = QGroupBox("Point cloud")
         pointCloudControl.setLayout(pointCloudLayout)
         cameraLayout.addWidget(self.video0Bm, 0, 0, 4, 4)
@@ -530,10 +542,6 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         bmControlLayout.addWidget(self.preFilterCap, 2, 5, 1, 1)
         bmControlLayout.addWidget(self.preFilterSizeLabel, 2, 6, 1, 1)
         bmControlLayout.addWidget(self.preFilterSize, 2, 7, 1, 1)
-        bmControlLayout.addWidget(self.P1Label, 2, 8, 1, 1)
-        bmControlLayout.addWidget(self.P1, 2, 9, 1, 1)
-        bmControlLayout.addWidget(self.P2Label, 2, 10, 1, 1)
-        bmControlLayout.addWidget(self.P2, 2, 11, 1, 1)
         bmControlGroup = QGroupBox("Block Matching control")
         bmControlGroup.setLayout(bmControlLayout)
         layout.addWidget(bmControlGroup, 2, 0, 1, 8)
@@ -547,7 +555,7 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
     ## @brief Creates the feature detection UI.
     def _createFeatureDetectionUI(self):
         layout = QGridLayout()
-        self.videoFeat = QLabel()
+        self.videoFD = QLabel()
 
         messageTitle = QLabel("Logging:")
         messageLabel = QLabel()
@@ -566,11 +574,18 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.featureMatcher = QComboBox()
         self.featureMatcher.addItems(["BF", "FLANN"])
         self.featureMatcher.currentTextChanged.connect(self.worker.updateFeatureMatcher)
+        maxDistanceLabel = QLabel("Max allowed distance between best matches")
+        self.maxDistance = QDoubleSpinBox()
+        self.maxDistance.valueChanged.connect(self.worker.updateMatchDistanceThreshold)
+        self.maxDistance.setRange(0.01, 100)
+        self.maxDistance.setSingleStep(0.01)
         controlLayout = QGridLayout()
         controlLayout.addWidget(featureDetectorLabel, 0, 2, 1, 1)
         controlLayout.addWidget(self.featureDetector, 0, 3, 1, 1)
         controlLayout.addWidget(featureMatcherLabel, 0, 4, 1, 1)
         controlLayout.addWidget(self.featureMatcher, 0, 5, 1, 1)
+        controlLayout.addWidget(maxDistanceLabel, 0, 6, 1, 1)
+        controlLayout.addWidget(self.maxDistance, 0, 7, 1, 1)
         controlLayoutWidget = QWidget()
         controlLayoutWidget.setLayout(controlLayout)
 
@@ -581,14 +596,62 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         buttonLayoutWidget = QWidget()
         buttonLayoutWidget.setLayout(buttonLayout)
 
-        layout.addWidget(self.videoFeat, 0, 0, 3, 1)
+        layout.addWidget(self.videoFD, 0, 0, 3, 1)
         layout.addWidget(messageLayoutWidget, 3, 0, 1, 1)
         layout.addWidget(controlLayoutWidget, 4, 0, 1, 1)
         layout.addWidget(buttonLayoutWidget, 5, 0, 1, 1)
         return layout
 
+    ## @brief Creates the motion estimation UI.
+    def _createMotionEstimationUI(self):
+        layout = QGridLayout()
+        self.videoDepthME = QLabel()
+        self.motionDisplay = PointCloudGLWidget()
+        self.trajectoryPlotDepth = LinePlotWidget()
+        self.trajectoryPlotXY = LinePlotWidget()
+
+        start = QPushButton("Start")
+        start.clicked.connect(self._startMotionEstimation)
+        buttonLayout = QHBoxLayout()
+        buttonLayout.addWidget(start)
+        buttonLayoutWidget = QWidget()
+        buttonLayoutWidget.setLayout(buttonLayout)
+
+        inliersLabel = QLabel("inliers")
+        self.inliers = QSpinBox()
+        self.inliers.valueChanged.connect(self.worker.updateInlierLimit)
+        self.inliers.setRange(1, 200)
+        self.inliers.setSingleStep(1)
+        maxDepthLabel = QLabel("maxDepth")
+        self.maxDepth = QSpinBox()
+        self.maxDepth.valueChanged.connect(self.worker.updateMaxDepth)
+        self.maxDepth.setRange(1, 200)
+        self.maxDepth.setSingleStep(1)
+        reprojectionErrorLabel = QLabel("reprojectionError")
+        self.reprojectionError = QDoubleSpinBox()
+        self.reprojectionError.valueChanged.connect(self.worker.updateReprojectionError)
+        self.reprojectionError.setRange(0.01, 10)
+        self.reprojectionError.setSingleStep(0.01)
+        controlLayout = QGridLayout()
+        controlLayout.addWidget(inliersLabel, 0, 0, 1, 1)
+        controlLayout.addWidget(self.inliers, 0, 1, 1, 1)
+        controlLayout.addWidget(maxDepthLabel, 0, 2, 1, 1)
+        controlLayout.addWidget(self.maxDepth, 0, 3, 1, 1)
+        controlLayout.addWidget(reprojectionErrorLabel, 0, 4, 1, 1)
+        controlLayout.addWidget(self.reprojectionError, 0, 5, 1, 1)
+        controlLayoutWidget = QWidget()
+        controlLayoutWidget.setLayout(controlLayout)
+
+        layout.addWidget(self.motionDisplay, 0, 0, 3, 4)
+        layout.addWidget(self.videoDepthME, 3, 0, 1, 2)
+        layout.addWidget(self.trajectoryPlotDepth, 3, 2, 2, 1)
+        layout.addWidget(self.trajectoryPlotXY, 3, 3, 2, 1)
+        layout.addWidget(controlLayoutWidget, 5, 0, 1, 4)
+        layout.addWidget(buttonLayoutWidget, 6, 0, 1, 4)
+        return layout
+
     # Updates the video stream labels.
-    def updateVideo(self, v0, v1, v_depth_color, v_depth_gray, v_feature):
+    def updateVideo(self, v0, v1, v_depth_color, v_depth_gray, v_feature, trajectory):
         if self.worker.mode == Modes.Calibration:
             self.process.show()
             self.takeImage.show()
@@ -600,10 +663,18 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             self.video0Bm.setPixmap(v0)
             self.video1Bm.setPixmap(v1)
             self.video_disp.setPixmap(v_depth_color)
-            self.pointCloud.calculatePointcloud(v_depth_gray)
+            self.pointCloud.setMapVBO(v_depth_gray)
             self.pointCloud.updateGL()
         elif self.worker.mode == Modes.FeatureDetection:
-            self.videoFeat.setPixmap(v_feature)
+            self.videoFD.setPixmap(v_feature)
+        elif self.worker.mode == Modes.MotionEstimation:
+            self.videoDepthME.setPixmap(v_depth_color)
+            self.motionDisplay.setTrajectoryVBO(trajectory)
+            self.motionDisplay.updateGL()
+            if trajectory is not None:
+                self.trajectoryPlotDepth.plotData(
+                    np.arange(len(trajectory)), trajectory[:, 2, 3])
+            self.trajectoryPlotXY.plotData(trajectory[:, 0, 3], trajectory[:, 1, 3])
 
     # Shows/hides the appropriate controls for SGBM and BM.
     def updateBmType(self, index):
@@ -618,10 +689,6 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             self.preFilterType.hide()
             self.smallerBlockSizeLabel.hide()
             self.smallerBlockSize.hide()
-            self.P1Label.show()
-            self.P1.show()
-            self.P2Label.show()
-            self.P2.show()
         else:
             self.textureThresholdLabel.show()
             self.textureThreshold.show()
@@ -633,10 +700,6 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             self.preFilterType.show()
             self.smallerBlockSizeLabel.show()
             self.smallerBlockSize.show()
-            self.P1Label.hide()
-            self.P1.hide()
-            self.P2Label.hide()
-            self.P2.hide()
         if self.worker is not None:
             self.worker.updateBmType(index)
 
@@ -688,8 +751,6 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.preFilterType.valueChanged.connect(self.worker.updatePreFilterType)
         self.preFilterSize.valueChanged.connect(self.worker.updatePrefilterSize)
         self.preFilterCap.valueChanged.connect(self.worker.updatePrefilterCap)
-        self.P1.valueChanged.connect(self.worker.updateP1)
-        self.P2.valueChanged.connect(self.worker.updateP2)
         self.worker.signals.cameraIndicesUpdated.connect(
             self.updateCameraIndices)
         self.bmCameraIndexLeft.currentIndexChanged.connect(
@@ -793,11 +854,32 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.worker.state = States.Idle
         self.worker.mode = Modes.FeatureDetection
 
+    ## @brieft Start the thread with motion estimation.
+    #
+    # If the thread is already running, it will not restart it
+    # just set to block matching mode, if it wasn't yet.
+    def _startMotionEstimation(self):
+        print("Starting motion estimation...")
+        if self.worker.mode == Modes.MotionEstimation:
+            print("Motion estimation is already running...")
+            return
+
+        # Execute
+        if self.worker.mode == Modes.NoMode:
+            self.worker.moveToThread(self.workerThread)
+            self.workerThread.finished.connect(self.worker.deleteLater)
+            self.workerThread.started.connect(self.worker.run)
+            self.workerThread.start()
+        self.worker.state = States.Idle
+        self.worker.mode = Modes.MotionEstimation
+
     # Terminate UI and the threads appropriately.
     def sigint_handler(self):
         if self.worker is not None:
             self.worker.stop = True
             self.workerThread.quit()
             self.workerThread.wait()
+        self.trajectoryPlotXY.clear()
+        self.trajectoryPlotDepth.clear()
         print("Exiting app through GUI")
         QApplication.quit()

@@ -78,7 +78,7 @@ class PointCloudWidget(QWidget):
             self._recreateScatterPlot(count)
 
     # Calculates the 3D point cloud from depth map frame.
-    def calculatePointcloud(self, depth):
+    def setMapVBO(self, depth):
         # TODO: FOV doesn't seem to work that well. need improvement.
         height = depth.shape[0]
         width = depth.shape[1]
@@ -109,7 +109,7 @@ class PointCloudWidget(QWidget):
     def setData(self, depthMap):
         if depthMap is None:
             return
-        self.data = self.calculatePointcloud(depthMap)
+        self.data = self.setMapVBO(depthMap)
 
     # Updates the scatterplot items with new positions and colors.
     def update(self):

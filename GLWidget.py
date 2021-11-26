@@ -48,7 +48,9 @@ from OpenGL.GLU import gluPerspective
 OpenGL.ERROR_CHECKING = True
 
 
-# Implements the GLWidget and its controls.
+## @class GLWidget
+#  @brief Implements the GLWidget and its controls.
+#
 # Credit is not mine, see the copyright above.
 class GLWidget(QtOpenGL.QGLWidget):
     # Qt signals
@@ -67,10 +69,10 @@ class GLWidget(QtOpenGL.QGLWidget):
         self.translate_vector_ = [0.0, 0.0, 0.0]
         self.viewport_matrix_ = []
         self.projection_matrix_ = []
-        self.near_ = 0.1
-        self.far_ = 100.0
+        self.near_ = 0.0001
+        self.far_ = 1000.0
         self.fovy_ = 45.0
-        self.radius_ = 5.0
+        self.radius_ = 2.0
         self.last_point_2D_ = QtCore.QPoint()
         self.last_point_ok_ = False
         self.last_point_3D_ = [1.0, 0.0, 0.0]
@@ -261,10 +263,10 @@ class GLWidget(QtOpenGL.QGLWidget):
                    self.modelview_matrix_[1][2] * self.center_[1] +
                    self.modelview_matrix_[2][2] * self.center_[2] +
                    self.modelview_matrix_[3][2]) /\
-                   (self.modelview_matrix_[0][3] * self.center_[0] +
-                    self.modelview_matrix_[1][3] * self.center_[1] +
-                    self.modelview_matrix_[2][3] * self.center_[2] +
-                    self.modelview_matrix_[3][3])
+                  (self.modelview_matrix_[0][3] * self.center_[0] +
+                   self.modelview_matrix_[1][3] * self.center_[1] +
+                   self.modelview_matrix_[2][3] * self.center_[2] +
+                   self.modelview_matrix_[3][3])
 
             fovy = 45.0
             aspect = w / h

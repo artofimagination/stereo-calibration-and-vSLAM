@@ -20,7 +20,7 @@ class FeatureDetector(QObject):
         # Message to display in the UI.
         self.message = ""
         # Maximum allowed relative distance between the best matches, (0.0, 1.0)
-        self.matchDistanceThreshold = 0.3
+        self.matchDistanceThreshold = 0.2
         # Holds the feature detector type string (sift, orb, surf)
         self.featureDetector = "sift"
         # Holds the feature matching algorithm type (Brute force, FLANN).
@@ -92,10 +92,15 @@ class FeatureDetector(QObject):
         return filtered_match
 
     ## @brief Extract features and detects feature matches on consecutuve images.
-    def detect_features(self):
+    #
+    # @param mask is generated from the depth image. Depending on block matching
+    #             parameters, sometimes the size of the useful part of depth image
+    #             differs from the camera image.
+    #             This mask helps to ignore the useless area.
+    def detect_features(self, mask):
         if self.previousFrame is not None:
-            kp0, des0 = self.extract_features(self.currentFrame, None)
-            kp1, des1 = self.extract_features(self.previousFrame, None)
+            kp0, des0 = self.extract_features(self.currentFrame, mask)
+            kp1, des1 = self.extract_features(self.previousFrame, mask)
             matches = self.match_features(des0, des1, sort=True)
             self.message = f"Number of matches before filtering: {len(matches)}\n"
             matches = self.filter_matches_distance(matches)
