@@ -11,6 +11,7 @@ Repo to produce stereo depth map, do mapping and navigation
 * [Feature detection tab](#feature-detection-tab)<br>
 * [Feature detection links](#sources-for-feature-detection-and-matching)<br>
 * [Motion estimation tab](#motion-estimation-tab)<br>
+* [Motion estimation links](#sources-for-motion-estimation)<br>
 
 # Intro
 This repo is heavily under development.
@@ -171,9 +172,20 @@ https://scialert.net/fulltext/?doi=itj.2009.250.262<br>
 Based on the previous tab all essential elements are ready to estimate motion poses and generate a trajectory. This tab will allow the user to do minor tweaks in the estimation and visualize trajectory.<br>
 To gain more understanding please check the links below. In nutshell, based on the key points (feature points that were found during feature matching) will be projected in 3D space using the depth map. Using the resulted object points and the original image keypoints a pose is generated (rotation and translation). This is then used to build a trajectory.<br>
 
-## UI use
-
 ![estimation](https://github.com/artofimagination/stereo-vSLAM/blob/master/resources/ReadmeImg4.png)
+
+## UI use
+In order to start motion estimation press **Start**.<br>
+The top graph shows the trajectory points in 3D space. The first graph in the second row is the depth map. Second graph is a line graph shows the depth (z) related to the cycle count. And the third graph shows the x,y coordinates.
+
+ * **Parameters**
+     - _inliers_ - sets the limit of at least how many inliers to be found to accept the pose estimation. Using the homebrew stereo camera I got a lot of false poses, making jumps in the trajectory. Adding this limit reduces the number of jumps.
+     - _Max depth_ - any keyp points  (feature points) that are further than max depth shall be ignored. Certain depth wouldn't give a reliable object point for pose estimation.
+     - _reprojectionError_ - max allowed distance between best matches during pose estimation
+
+# Motion Estimation tips
+I haven't gotten too deep in the theory behind motion estimation, the jupyter notebook in the link below gives a really good summary.
+ * At this stage having syncronized cameras is a really good idea. I certainly have reliability issues during camera movement resulting in not finding enough matches, those skipping the pose estimation step. This of course will drift the trajectory.
 
 # Sources for motion estimation
 https://github.com/FoamoftheSea/KITTI_visual_odometry<br>
