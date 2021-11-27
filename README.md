@@ -28,6 +28,12 @@ To install dependencies run<br>
 ```sudo apt install python3-pyqt5.qtopengl```<br>
 To run the app run ```python main.py```<br>
 
+## How to use?
+Think about this app as a pipeline where each tab represents a step towards a complete vSLAM solution. 
+ * Start with the calibration tab, setup your camera matrices. 
+ * Once done, jump on the second tab start block matching and depth map generation. tweak your parameters as you like.
+ * Then in the third tab have a feel of different feature matching algorithms.
+ * In the last tab you can see everything put together and see your cameras' trajectory drawn as you move it.
 
 # Generic UI features
 * **Save settings** - saves all UI control values into a settings npz file. Also saves feature specific info and files to locations those name is identical to the settings name. Saving the settings will generate a lastSaved folder/folder as well. this is useful for **Default load on startup**
