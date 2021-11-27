@@ -608,7 +608,9 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         self.videoDepthME = QLabel()
         self.motionDisplay = PointCloudGLWidget()
         self.trajectoryPlotDepth = LinePlotWidget()
+        self.trajectoryPlotDepth.setAxisLabel("time", "z")
         self.trajectoryPlotXY = LinePlotWidget()
+        self.trajectoryPlotXY.setAxisLabel("x", "y")
 
         start = QPushButton("Start")
         start.clicked.connect(self._startMotionEstimation)

@@ -38,6 +38,8 @@ class FeatureDetector(QObject):
         elif self.featureDetector == "orb":
             det = cv2.ORB_create()
         elif self.featureDetector == "surf":
+            raise Exception("Apparently SURF still has a valid patent\
+and is not available in the CV package")
             det = cv2.xfeatures2d.SURF_create()
 
         kp, des = det.detectAndCompute(image, mask)

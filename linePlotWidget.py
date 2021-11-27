@@ -7,7 +7,7 @@ import pyqtgraph as pg
 ## @class LinePlotWidget
 #  @brief Draws a simple line graph.
 #
-# Extremely basic solution. No multilines or legends, axis names.
+# Extremely basic solution.
 # PlotWidget support pan/zoom by default, though.
 class LinePlotWidget(QWidget):
 
@@ -17,6 +17,18 @@ class LinePlotWidget(QWidget):
         self.vertices = dict()
         layout = QHBoxLayout(self)
         layout.addWidget(self.graphWidget)
+        # showing x and y grids
+        self.graphWidget.showGrid(x=True, y=True)
+        # adding legend
+        self.graphWidget.addLegend()
+
+    # Sets the axis labels.
+    def setAxisLabel(self, xName, yName):
+        # set properties of the label for y axis
+        self.graphWidget.setLabel('left', yName)
+
+        # set properties of the label for x axis
+        self.graphWidget.setLabel('bottom', xName)
 
     # Sets the new point cloud data array to be visualized.
     def plotData(self, x, y):
