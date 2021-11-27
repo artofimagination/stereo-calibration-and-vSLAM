@@ -15,8 +15,8 @@ Repo to produce stereo depth map, do mapping and navigation
 # Intro
 This repo is heavily under development.
 
-At the moment only stereo camera calibration, depth map block matching configuration and feature detection is implemented.<br>
-Added a small UI that allows generating calibration images and configuring block matching and feature detection parameters in a comfortable way.
+At the moment only stereo camera calibration, depth map block matching configuration, feature detection and motion estimation are implemented.<br>
+Added a small UI that allows generating calibration images and configuring block matching and feature detection parameters in a comfortable way. It also does pose detection and motion estimation.
 
 Any contribution is appreciated.
 
@@ -100,7 +100,7 @@ The majority of the following description is copied from this [OpenCV answer](ht
       - _prefilter type/size/cap_ - used in filtering the input images before disparity computation. These may improve noise rejection in input images.
       - _smallerBlockSize_ - in theory this should reduce noise, but I couldn't produce any effect
  * **SGBM parameters**
-      - _P1, P2_ - used in filtering the disparity map before returning to reject small blocks. May reduce noise.
+      - ~~_P1, P2_ - used in filtering the disparity map before returning to reject small blocks. May reduce noise.~~ It is not settable in the UI anymore,but calculated using the block size.
 
 ### Point cloud visualization
 I've got two solutions
@@ -113,6 +113,7 @@ Note: it uses pyqtgraph scatterplot. It is not a very fast way to represent, but
  * **Parameters**
       - _fov_ - sets the field of view
       - _samplingRatio_ - allows the user to change how many points to show. For example selecting 10, will show every 10th point only. Improves performance. For me > 200 settings was reasonable fast.
+      - _ignore depth_ - Ignores drawing points that have a depth more than the limit.
 
 ### Resolution
 Performance can be quite different with different resolution, hence I added the feature of changing it. Note: Blok Matching resolution MUST be the same as the calibration for appropriate results.
