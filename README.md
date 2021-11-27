@@ -160,6 +160,7 @@ There are only a few parameters present. In order to connect to the cameras and 
  * **Parameters**
      - _Feature detector_ - allows the user to change the detector algorithm between sift, orb and surf. Note surf is not supported with BF matcher in this app. It will terminate with an exception.
      - _Feature matcher_ - allows the user to change the detector matching algorithm ("BF" Brute force and FLANN)
+     - _Max allowed distance between best matches_ - Filters all the best matches that have a distance below this limit
 
 # Sources for feature detection and matching
 https://www.youtube.com/watch?v=2GJuEIh4xGo<br>
@@ -167,6 +168,11 @@ https://github.com/FoamoftheSea/KITTI_visual_odometry<br>
 https://scialert.net/fulltext/?doi=itj.2009.250.262<br>
 
 # Motion estimation tab
+Based on the previous tab all essential elements are ready to estimate motion poses and generate a trajectory. This tab will allow the user to do minor tweaks in the estimation and visualize trajectory.<br>
+To gain more understanding please check the links below. In nutshell, based on the key points (feature points that were found during feature matching) will be projected in 3D space using the depth map. Using the resulted object points and the original image keypoints a pose is generated (rotation and translation). This is then used to build a trajectory.<br>
+
+## UI use
+
 ![estimation](https://github.com/artofimagination/stereo-vSLAM/blob/master/resources/ReadmeImg4.png)
 
 # Sources for motion estimation
