@@ -21,7 +21,6 @@ My fixture was a home made stereo camera consisting of two Logitec C270 webcamer
 
 ![camera](https://github.com/artofimagination/stereo-vSLAM/blob/master/resources/Camera.jpg)
 
-Any contribution is appreciated.
 
 ## Install
 The app was tested on Ubuntu 20.04 with Python 3.8. Can't guarantie it works on windows.<br>
