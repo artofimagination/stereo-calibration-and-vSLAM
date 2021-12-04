@@ -104,8 +104,8 @@ class PointCloudGLWidget(GLWidget):
         glDisableClientState(GL_COLOR_ARRAY)
         glPopMatrix()
 
-    # Sets the map VBO.
-    def setMapVBO(self, depth):
+    # Calculates pointcloud from depth map.
+    def calculatePointCloud(self, depth):
         if depth is None:
             return
         height = depth.shape[0]
@@ -126,7 +126,10 @@ class PointCloudGLWidget(GLWidget):
         world_z = depth[y, x]
         pointCloud = np.vstack((-world_x, world_y, -world_z)).T
         pointCloud = pointCloud[0::self.samplingRatio, :]
+        return pointCloud
 
+    # Sets the map VBO.
+    def setMapVBO(self, pointCloud):
         if pointCloud is not None:
             self.disp_count = len(pointCloud)
             indices = np.arange(self.disp_count)
@@ -146,7 +149,8 @@ class PointCloudGLWidget(GLWidget):
         if trajectory is not None:
             self.trajectory_count = len(trajectory)
             colors = np.full([self.trajectory_count, 3], [255, 255, 255], dtype=np.uint8)
-            self.vbo_trajectory = glvbo.VBO((trajectory[:, :, 3][:, ]).astype(np.float32))
+            self.vbo_trajectory = glvbo.VBO(
+                (trajectory[:, :, 3][:, ]).astype(np.float32) / 10.0)
             self.vbo_trajectory_clr = glvbo.VBO(colors)
 
     def initializeGL(self):

@@ -83,6 +83,11 @@ class MainWindow(QMainWindow):
         motionEstimationLayoutWidget.setLayout(motionEstimationLayout)
         tabwidget.addTab(motionEstimationLayoutWidget, "Motion estimation")
 
+        vSlamUILayout = self._createVSlamUI()
+        vSlamUILayoutWidget = QWidget()
+        vSlamUILayoutWidget.setLayout(vSlamUILayout)
+        tabwidget.addTab(vSlamUILayoutWidget, "Visual SLAM")
+
         self._initUIElements()
 
         mainLayout.addWidget(tabwidget, 0, 0)
@@ -627,7 +632,7 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         maxDepthLabel = QLabel("maxDepth")
         self.maxDepth = QSpinBox()
         self.maxDepth.valueChanged.connect(self.worker.updateMaxDepth)
-        self.maxDepth.setRange(1, 200)
+        self.maxDepth.setRange(1, 5000)
         self.maxDepth.setSingleStep(1)
         reprojectionErrorLabel = QLabel("reprojectionError")
         self.reprojectionError = QDoubleSpinBox()
@@ -652,8 +657,27 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
         layout.addWidget(buttonLayoutWidget, 6, 0, 1, 4)
         return layout
 
+    ## @brief Creates the vSLAM UI.
+    def _createVSlamUI(self):
+        layout = QGridLayout()
+        self.videoDepthVSlam = QLabel()
+        self.motionDisplayVSlam = PointCloudGLWidget()
+
+        start = QPushButton("Start")
+        start.clicked.connect(self._startVSlam)
+        buttonLayout = QHBoxLayout()
+        buttonLayout.addWidget(start)
+        buttonLayoutWidget = QWidget()
+        buttonLayoutWidget.setLayout(buttonLayout)
+
+        layout.addWidget(self.motionDisplayVSlam, 0, 0, 4, 4)
+        layout.addWidget(self.videoDepthVSlam, 2, 0, 1, 1)
+        layout.addWidget(buttonLayoutWidget, 4, 0, 1, 4)
+        return layout
+
     # Updates the video stream labels.
-    def updateVideo(self, v0, v1, v_depth_color, v_depth_gray, v_feature, trajectory):
+    def updateVideo(
+            self, v0, v1, v_depth_color, v_depth_gray, v_feature, trajectory, featureMap):
         if self.worker.mode == Modes.Calibration:
             self.process.show()
             self.takeImage.show()
@@ -665,7 +689,8 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             self.video0Bm.setPixmap(v0)
             self.video1Bm.setPixmap(v1)
             self.video_disp.setPixmap(v_depth_color)
-            self.pointCloud.setMapVBO(v_depth_gray)
+            pointCloud = self.pointCloud.calculatePointCloud(v_depth_gray)
+            self.pointCloud.setMapVBO(pointCloud)
             self.pointCloud.updateGL()
         elif self.worker.mode == Modes.FeatureDetection:
             self.videoFD.setPixmap(v_feature)
@@ -677,6 +702,11 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
                 self.trajectoryPlotDepth.plotData(
                     np.arange(len(trajectory)), trajectory[:, 2, 3])
             self.trajectoryPlotXY.plotData(trajectory[:, 0, 3], trajectory[:, 1, 3])
+        elif self.worker.mode == Modes.Mapping:
+            self.motionDisplayVSlam.setTrajectoryVBO(trajectory)
+            self.motionDisplayVSlam.setMapVBO(featureMap)
+            self.motionDisplayVSlam.updateGL()
+            self.videoDepthVSlam.setPixmap(v_depth_color)
 
     # Shows/hides the appropriate controls for SGBM and BM.
     def updateBmType(self, index):
@@ -874,6 +904,25 @@ and will throw away if there is ahigh RMS result. See more in README.md\n\
             self.workerThread.start()
         self.worker.state = States.Idle
         self.worker.mode = Modes.MotionEstimation
+
+    ## @brieft Start the thread with mapping functionality.
+    #
+    # If the thread is already running, it will not restart it
+    # just set to block matching mode, if it wasn't yet.
+    def _startVSlam(self):
+        print("Starting Visual SLAM...")
+        if self.worker.mode == Modes.Mapping:
+            print("Visual SLAM is already running...")
+            return
+
+        # Execute
+        if self.worker.mode == Modes.NoMode:
+            self.worker.moveToThread(self.workerThread)
+            self.workerThread.finished.connect(self.worker.deleteLater)
+            self.workerThread.started.connect(self.worker.run)
+            self.workerThread.start()
+        self.worker.state = States.Idle
+        self.worker.mode = Modes.Mapping
 
     # Terminate UI and the threads appropriately.
     def sigint_handler(self):

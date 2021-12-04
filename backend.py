@@ -6,6 +6,7 @@ from sensor import Sensor, generateDepthMapMask
 from calibration import SensorCalibrator
 from featureDetector import FeatureDetector
 from motionEstimator import MotionEstimator
+from mapping import FeatureMap
 
 from PyQt5.QtCore import QObject, Qt
 from PyQt5 import QtCore
@@ -27,7 +28,10 @@ class BackendSignals(QtCore.QObject):
     # depth map point cloud
     # feature matches image QPixmap
     # trajectory of our movement
-    framesSent = QtCore.pyqtSignal(QPixmap, QPixmap, QPixmap, object, QPixmap, object)
+    # feature map recorded during navigation.
+    # transformation matrix
+    framesSent = QtCore.pyqtSignal(
+        QPixmap, QPixmap, QPixmap, object, QPixmap, object, object)
     updateCalibInfo = QtCore.pyqtSignal(object, object)
     updateFeatureInfo = QtCore.pyqtSignal(object)
     rmsLimitUpdated = QtCore.pyqtSignal(float)
@@ -60,6 +64,8 @@ class Modes(Enum):
     FeatureDetection = 3
     # Estimates motion trajectory and orientation
     MotionEstimation = 4
+    # Puts the point cloud and features in a map.
+    Mapping = 5
 
 
 ## @class Backend
@@ -97,6 +103,9 @@ class Backend(QObject):
 
         # Responsible to generate trajectory and orientation
         self.motionEstimator = MotionEstimator()
+        # Responsible to store features and depth map in a point cloud.
+        self.mapping = FeatureMap()
+
         # This number represents which frame to process. For example if it is set to 5
         # every 5th frame is being processed. This is to improve performance.
         # Must be >= 1.
@@ -330,6 +339,7 @@ class Backend(QObject):
             rightFrame = None
             image_matches = None
             trajectory = None
+            featureMap = None
             leftPix = QPixmap()
             rightPix = QPixmap()
             depthPix = QPixmap()
@@ -394,8 +404,8 @@ class Backend(QObject):
                     if self.state == States.Idle:
                         (leftFrame, rightFrame) = self.sensor.captureFrame()
                         self.featureDetector.set_frame(leftFrame)
-                        (_, _, _, image_matches) = self.featureDetector.detect_features(
-                            None)
+                        (_, _, _, _, _, image_matches) =\
+                            self.featureDetector.detect_features(None)
 
                 elif self.mode == Modes.MotionEstimation:
                     if self.state == States.Idle:
@@ -416,22 +426,68 @@ class Backend(QObject):
                             (kp0, kp1, matches, image_matches) =\
                                 self.featureDetector.detect_features(mask)
                             if kp0 is not None and kp1 is not None:
-                                trajectory = self.motionEstimator.calculate_trajectory(
-                                    matches,
-                                    kp0,
-                                    kp1,
-                                    calibration["leftCameraMatrix"],
-                                    depth_pointcloud)
+                                rmat, tvec, _, _, _ =\
+                                    self.motionEstimator.estimate_motion(
+                                        matches,
+                                        kp0,
+                                        kp1,
+                                        calibration["leftCameraMatrix"],
+                                        depth_pointcloud)
+                                trajectory, _ = self.motionEstimator.calculate_trajectory(
+                                    rmat,
+                                    tvec)
                         frameSkipCount += 1
 
                     if self.state == States.UpdateSensorConfig:
                         self.sensor.restartSensors()
                         self.state = States.Idle
+                elif self.mode == Modes.Mapping:
+                    if self.state == States.Idle:
+                        if calibrationFileLoaded is False:
+                            calibration = self.sensor.loadCalibFile()
+                            calibrationFileLoaded = True
+                        (leftFrame, rightFrame) = self.sensor.captureFrame()
+
+                        # Do processing only in every xth cycle.
+                        if frameSkipCount == 1:
+                            frameSkipCount = 0
+                            (leftFrame, rightFrame, depth_pointcloud) =\
+                                self.sensor.createDepthMap(
+                                    calibration, leftFrame, rightFrame)
+                            calibration["leftCameraMatrix"]
+                            self.featureDetector.set_frame(leftFrame)
+                            mask = generateDepthMapMask(depth_pointcloud, leftFrame)
+                            (kp0, kp1, matches, image_matches) =\
+                                self.featureDetector.detect_features(mask)
+                            if kp0 is not None and kp1 is not None:
+                                rmat, tvec, img0, img1, object_points =\
+                                    self.motionEstimator.estimate_motion(
+                                        matches,
+                                        kp0,
+                                        kp1,
+                                        calibration["leftCameraMatrix"],
+                                        depth_pointcloud)
+                                trajectory, worldTransform =\
+                                    self.motionEstimator.calculate_trajectory(
+                                        rmat,
+                                        tvec)
+                                if object_points is not None:
+                                    self.mapping.init_landmarks(
+                                        object_points,
+                                        worldTransform)
+                                featureMap = self.mapping.get_pointcloud()
+                        frameSkipCount += 1
 
                 (leftPix, rightPix, depthPix, matchesPix) = self.updateVideoPixmap(
                     leftFrame, rightFrame, depth_pointcloud, image_matches)
                 self.signals.framesSent.emit(
-                    leftPix, rightPix, depthPix, depth_pointcloud, matchesPix, trajectory)
+                    leftPix,
+                    rightPix,
+                    depthPix,
+                    depth_pointcloud,
+                    matchesPix,
+                    trajectory,
+                    featureMap)
         except Exception:
             self.sensor.releaseVideoDevices()
             traceback.print_exc()

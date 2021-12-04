@@ -14,8 +14,10 @@ class MotionEstimator():
         self.trajectory = list()
         self.trajectory = np.zeros((1, 3, 4))
         self.T_tot = np.eye(4)
+        self.T_tot_absolute = np.eye(4)
         self.trajectory[0] = self.T_tot[:3, :]
         self.skipTraj = False
+        self.outlierTolerance = 10
 
         self.inliersLimit = 20
         self.maxDepth = 200
@@ -88,43 +90,31 @@ class MotionEstimator():
 
             # Only accept the result if there are certain number of inliers.
             if len(inliers) < self.inliersLimit:
-                return None, None, None, None
+                return None, None, None, None, None
         except Exception as e:
             print(e)
             print("Not enough feature matches to estimate motion, skipping this step.")
-            return None, None, None, None
+            return None, None, None, None, None
         # Above function returns axis angle rotation representation rvec,
         # use Rodrigues formula to convert this to our desired format
         # of a 3x3 rotation matrix
         rmat = cv2.Rodrigues(rvec)[0]
 
-        return rmat, tvec, image1_points, image2_points
+        return rmat, tvec, image1_points, image2_points, object_points
 
     ## @brief Function to perform visual odometry.
     #
     # Takes as input a Data_Handler object and optional parameters.
     #
-    # @param match -- list of matched features from the pair of images
-    # @param kp1 -- list of the keypoints in the first image
-    # @param kp2 -- list of the keypoints in the second image
-    # @param k_left -- left camera intrinsic calibration matrix
-    # @param depth -- Depth map of the first frame.
-    #                  Set to None to use Essential Matrix decomposition
+    # @param rmat -- estimated 3x3 rotation matrix
+    # @param tvec -- estimated 3x1 translation vector
     #
     # @return trajectory -- Array of shape Nx3x4 of estimated poses of vehicle
     #                       for each computed frame.
-    def calculate_trajectory(
-            self,
-            matches,
-            kp0,
-            kp1,
-            k_left,
-            depth):
-        # Estimate motion between sequential images of the left camera
-        rmat, tvec, img1_points, img2_points = self.estimate_motion(
-            matches, kp0, kp1, k_left, depth)
+    def calculate_trajectory(self, rmat, tvec):
+
         if rmat is None:
-            return self.trajectory
+            return self.trajectory, self.T_tot_absolute
 
         # Create blank homogeneous transformation matrix
         Tmat = np.eye(4)
@@ -132,6 +122,11 @@ class MotionEstimator():
         # in their proper locations in homogeneous T matrix
         Tmat[:3, :3] = rmat
         Tmat[:3, 3] = tvec.T
+        # If the translation is unexpectedly large (outlier) we ignore that estimation.
+        if abs(tvec[0]) > self.outlierTolerance or\
+            abs(tvec[1]) > self.outlierTolerance or\
+                abs(tvec[2]) > self.outlierTolerance:
+            return self.trajectory, self.T_tot_absolute
 
         # The SolvePnPRansac() function computes a pose that relates points in the global
         # coordinate frame to the camera's pose.
@@ -158,6 +153,8 @@ class MotionEstimator():
         # where the camera's curent
         # origin is in this global referece frame.
         T_tot = self.T_tot.dot(np.linalg.inv(Tmat))
+        # Set store the absolute transformation for mapping.
+        self.T_tot_absolute = self.T_tot_absolute.dot(Tmat)
 
         # Place pose estimate in i+1 to correspond to the second image,
         # which we estimated for
@@ -166,4 +163,4 @@ class MotionEstimator():
         self.T_tot = T_tot
         self.frameCount += 1
 
-        return self.trajectory
+        return self.trajectory, self.T_tot_absolute
