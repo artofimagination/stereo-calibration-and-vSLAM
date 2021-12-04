@@ -49,8 +49,8 @@ class PointCloudWidget(QWidget):
     def setResolution(self, value):
         self.resolution = value
         count = int(
-                self.resolution[0] *
-                self.resolution[1] / self.samplingRatio) + 1
+            self.resolution[0] *
+            self.resolution[1] / self.samplingRatio) + 1
         self._recreateScatterPlot(count)
 
     # Regenerates the scatterplot item list.

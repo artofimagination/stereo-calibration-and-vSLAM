@@ -12,6 +12,17 @@ from PyQt5.QtCore import QObject
 CALIBRATION_RESULT = "output/calibration.npz"
 
 
+# Loads the calibration file generated in the calibration tab.
+def loadCalibFile():
+    try:
+        calibration = np.load(CALIBRATION_RESULT, allow_pickle=False)
+    except IOError as e:
+        raise Exception(
+              f"Calibration file is missing. \
+Please run calibration first: {e}")
+    return calibration
+
+
 # @class SensorCalibrator
 # Generates calibration images and data
 # Calibrates the cameras and stores the result for future use.
@@ -68,7 +79,7 @@ class SensorCalibrator(QObject):
 
     # Saves current image pair and
     # gets chessboard corner data of all saved images.
-    def saveAndProcessImage(self, leftFrame, rightFrame):
+    def saveAndProcessImage(self, frame):
         left_path = self.LEFT_PATH.format(
             self.LEFT_IMAGE_DIR, self.calib_image_index)
         right_path = self.RIGHT_PATH.format(
@@ -77,8 +88,8 @@ class SensorCalibrator(QObject):
             f"Store image Left {left_path}")
         print(
             f"Store image Right {right_path}")
-        cv2.imwrite(left_path, leftFrame)
-        cv2.imwrite(right_path, rightFrame)
+        cv2.imwrite(left_path, frame.leftImage)
+        cv2.imwrite(right_path, frame.rightImage)
         self.calib_image_index += 1
         self.calibImageIndexUpdated.emit(self.calib_image_index)
         self.getCameraParams()
