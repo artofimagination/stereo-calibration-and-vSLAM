@@ -195,6 +195,7 @@ The top graph shows the trajectory points in 3D space. The first graph in the se
 # Motion Estimation tips
 I haven't gotten too deep in the theory behind motion estimation, the jupyter notebook in the link below gives a really good summary.
  * At this stage having syncronized cameras is a really good idea. I certainly have reliability issues during camera movement resulting in not finding enough matches, those skipping the pose estimation step. This of course will drift the trajectory.
+ * I introduced a filter in the tracejtory generation. The motion estimator can give outliers resulting spikes in the translation vector. I guess it has to do with my camera setup, which is admitedly not too reliable
 
 # Sources for motion estimation
 https://github.com/FoamoftheSea/KITTI_visual_odometry<br>
