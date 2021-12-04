@@ -16,7 +16,7 @@ Repo to produce stereo depth map, do mapping and navigation
 * [Mapping links](#mapping-links)<br>
 
 # Intro
-This repository is meant to be a proof of concept for stereo vSLAM. It is not an optimal solution. Contains calibration, depth map generation, feature matching motion estimation and mapping. I was able to reach a basic efficienacy, showing the trajectory of the camera and drawing a point cloud environment resembling somewhat the room it was moving.<br>
+This repository is meant to be a proof of concept for stereo vSLAM. It is not an optimal solution. Contains calibration, depth map generation, feature matching, motion estimation and mapping. I was able to reach a basic efficienacy, showing the trajectory of the camera and drawing a point cloud environment resembling somewhat the room it was moving.<br>
 My fixture was a home made stereo camera consisting of two Logitec C270 webcameras distanced 75 mm apart from each other.<br>
 
 ![camera](https://github.com/artofimagination/stereo-vSLAM/blob/master/resources/Camera.jpg)
