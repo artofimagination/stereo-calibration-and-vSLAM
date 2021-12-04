@@ -12,12 +12,14 @@ Repo to produce stereo depth map, do mapping and navigation
 * [Feature detection links](#sources-for-feature-detection-and-matching)<br>
 * [Motion estimation tab](#motion-estimation-tab)<br>
 * [Motion estimation links](#sources-for-motion-estimation)<br>
+* [Mapping](#mapping)<br>
+* [Mapping links](#mapping-links)<br>
 
 # Intro
-This repo is heavily under development.
+This repository is meant to be a proof of concept for stereo vSLAM. It is not an optimal solution. Contains calibration, depth map generation, feature matching motion estimation and mapping. I was able to reach a basic efficienacy, showing the trajectory of the camera and drawing a point cloud environment resembling somewhat the room it was moving.<br>
+My fixture was a home made stereo camera consisting of two Logitec C270 webcameras distanced 75 mm apart from each other.<br>
 
-At the moment only stereo camera calibration, depth map block matching configuration, feature detection and motion estimation are implemented.<br>
-Added a small UI that allows generating calibration images and configuring block matching and feature detection parameters in a comfortable way. It also does pose detection and motion estimation.
+![camera](https://github.com/artofimagination/stereo-vSLAM/blob/master/resources/Camera.png)
 
 Any contribution is appreciated.
 
@@ -33,7 +35,8 @@ Think about this app as a pipeline where each tab represents a step towards a co
  * Start with the calibration tab, setup your camera matrices. 
  * Once done, jump on the second tab start block matching and depth map generation. tweak your parameters as you like.
  * Then in the third tab have a feel of different feature matching algorithms.
- * In the last tab you can see everything put together and see your cameras' trajectory drawn as you move it.
+ * The next tab shows cameras' trajectory drawn as you move it. 
+ * Last tab will show the mapping of the environment and the trajectory
 
 # Generic UI features
 * **Save settings** - saves all UI control values into a settings npz file. Also saves feature specific info and files to locations those name is identical to the settings name. Saving the settings will generate a lastSaved folder/folder as well. this is useful for **Default load on startup**
@@ -195,3 +198,15 @@ I haven't gotten too deep in the theory behind motion estimation, the jupyter no
 
 # Sources for motion estimation
 https://github.com/FoamoftheSea/KITTI_visual_odometry<br>
+
+# Mapping
+The final stage is creating the mapping of the environment. I kept this part to the absolute minimum, which is drawing the the keypoints (landmarks) in absolute coordinates. There can be a lot more improvements, like optimizing out duplicate keypoints, improve accuracy. But the current solution is enough for a proof of concept.
+
+![mapping](https://github.com/artofimagination/stereo-vSLAM/blob/master/resources/ReadmeImg5.png)
+
+## UI use
+In order to start motion estimation press **Start**.<br>
+
+# Mapping links
+https://github.com/shangzhouye/stereo-visual-slam<br>
+
